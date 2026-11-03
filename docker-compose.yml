@@ -1,0 +1,41 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/frontend/src
+      - ./frontend/index.html:/app/frontend/index.html
+    depends_on:
+      api:
+        condition: service_started
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Completar POSTGRES_USER}:${POSTGRES_PASSWORD:?Completar POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Completar POSTGRES_DB}?schema=public&connect_timeout=2&pool_timeout=2&socket_timeout=2&connection_limit=3
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Completar POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Completar POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Completar POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  postgres_data:

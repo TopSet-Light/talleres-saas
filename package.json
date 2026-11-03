@@ -1,0 +1,9 @@
+{
+  "name": "talleres-saas",
+  "private": true,
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "build": "pnpm --filter frontend build && pnpm --filter backend build",
+    "test": "pnpm --filter frontend test && pnpm --filter backend test"
+  }
+}
