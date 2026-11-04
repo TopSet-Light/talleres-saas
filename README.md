@@ -127,6 +127,12 @@ pnpm build
 pnpm test
 ```
 
+## CI y pull requests en GitHub
+
+El workflow [CI](.github/workflows/ci.yml) verifica instalación reproducible, esquema Prisma, tipos, compilación y pruebas de ambas aplicaciones en PRs hacia `main` y pushes a `main`. Usa Node y pnpm alineados con el entorno local, sin necesitar secretos ni un servidor propio. Las pruebas actuales sustituyen la consulta de PostgreSQL; la integración real sigue siendo una comprobación local.
+
+La [guía de CI y colaboración](docs/ci-github.md) explica cómo subir esta configuración, exigir PR y CI correcto para `main`, y **activar una aprobación obligatoria al final**, después de integrar este primer cambio. Incluye recomendaciones de merges, permisos y mantenimiento. Las reglas se activan en GitHub; el workflow por sí solo no bloquea pushes directos. No hay despliegue configurado.
+
 ## Caída y recuperación
 
 Con el entorno levantado:

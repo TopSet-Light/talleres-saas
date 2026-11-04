@@ -13,7 +13,11 @@ Se conserva el monorepo confirmado: frontend React + Vite + TypeScript, backend 
 ├── README.md                         Producto, alcance y arranque local
 ├── AGENTS.md                         Instrucciones de trabajo para Codex
 ├── VERIFICATION.md                   Evidencia de verificaciones y pendientes
+├── .github/
+│   ├── workflows/ci.yml              Instalación, Prisma, compilación y pruebas
+│   └── pull_request_template.md      Descripción y verificación del cambio
 ├── docs/
+│   ├── ci-github.md                  CI, protección de main y colaboración
 │   ├── estructura-del-proyecto.md    Este mapa de carpetas y responsabilidades
 │   └── requeriments/
 │       └── Requerimientos-SaaS-Talleres (1).pdf
@@ -228,4 +232,4 @@ AUTH-07 y CFG describen la misma configuración comercial desde distintos criter
 - Flujo completo de navegador: cuando se incorpore un runner E2E, alojar escenarios en `frontend/e2e/`, contra frontend, API y PostgreSQL del entorno de pruebas. La herramienta todavía no está elegida ni configurada.
 - Seeds y fixtures: datos ficticios con dos talleres separados; no datos reales de clientes. Los fixtures de pruebas no son configuración inicial obligatoria de producción.
 - Decisiones de arquitectura: crear `docs/decisiones/` cuando se registren decisiones concretas. Guías operativas de despliegue, backups y restauración podrán ir en `docs/operacion/` al abordar esas tareas.
-- CI, despliegue, backups y monitoreo tienen requisitos propios (TEC-08 a TEC-10). Sus carpetas y archivos se añadirán al implementarlos; no se incluye `.github/workflows/` ni configuración de VPS en esta entrega documental.
+- CI (parte de TEC-08) está configurado en `.github/workflows/ci.yml`; `docs/ci-github.md` explica su alcance y la activación de reglas en GitHub. Despliegue, backups y monitoreo (TEC-08 a TEC-10) siguen pendientes; no se incluye configuración de VPS.
