@@ -19,6 +19,21 @@ Entorno: Windows, Node.js 22.23.4, pnpm 10.26.2, Docker CLI 27.3.1 y Compose v2.
 | Persistencia después de recrear contenedores | **Pendiente** por el mismo fallo. No se creó ningún dato de prueba en una base real. |
 | Recarga dentro del contenedor | **Pendiente** por el mismo fallo. Configurado montaje solo de fuente y polling, conservando dependencias de la imagen. |
 
+## CI de GitHub — 4 de noviembre de 2026
+
+Alcance: integración continua de TEC-08 y guía de colaboración; sin despliegue ni cambios de configuración remota. Entorno local: Windows, Node.js 22.23.4 y pnpm 10.26.2.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Instalación reproducible | `pnpm install --frozen-lockfile` con `CI=true` aprobado, sin modificar el lockfile. La descarga inicial falló por DNS del entorno restringido; se completó con acceso autorizado fuera de ese entorno. |
+| Prisma | `pnpm --filter backend exec prisma validate` aprobado con URL ficticia de CI, sin conectar a PostgreSQL. |
+| Tipos y compilación | `pnpm --filter frontend typecheck` y `pnpm build` aprobados; frontend Vite y backend TypeScript/Prisma compilaron correctamente. |
+| Frontend | `pnpm test` ejecutó y aprobó las 6 pruebas del frontend. |
+| Backend | En la misma ejecución, la prueba HTTP falló con `fetch failed` dentro del entorno restringido y la de timeout pasó. Repetición autorizada con `pnpm --filter backend test` fuera de la restricción: 2/2 aprobadas. HTTP local real con consulta sustituida; no integración con PostgreSQL. |
+| Workflow | Revisión manual de eventos, comandos, permisos de lectura, timeout, concurrencia y correspondencia con scripts existentes. Sin validación con actionlint, que no está instalado. |
+| Formato | `git diff --check` aprobado. |
+| GitHub Actions y protección de main | **Pendientes**: subir e integrar el PR, comprobar `CI / Quality` en el runner de GitHub y guardar el ruleset según `docs/ci-github.md`. La aprobación obligatoria se activa al final. No se hizo push ni se modificaron reglas remotas. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.
