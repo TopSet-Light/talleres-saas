@@ -34,6 +34,44 @@ Alcance: integración continua de TEC-08 y guía de colaboración; sin despliegu
 | Formato | `git diff --check` aprobado. |
 | GitHub Actions y protección de main | **Pendientes**: subir e integrar el PR, comprobar `CI / Quality` en el runner de GitHub y guardar el ruleset según `docs/ci-github.md`. La aprobación obligatoria se activa al final. No se hizo push ni se modificaron reglas remotas. |
 
+## Acceso local a PostgreSQL — 5 de noviembre de 2026
+
+- Se publicó `127.0.0.1:5432:5432` y se aplicó con `docker compose up -d postgres`, conservando el volumen existente.
+- `docker compose config --quiet` aprobado. `docker compose ps` mostró PostgreSQL saludable y `docker compose port postgres 5432` devolvió `127.0.0.1:5432`.
+- Una conexión TCP desde Windows a `127.0.0.1:5432` fue correcta. `docker compose exec -T postgres psql -U talleres -d talleres -c "SELECT 1 AS connection_ok;"` devolvió `1` contra PostgreSQL real.
+- Usuario y base confirmados: `talleres`. No se mostró la contraseña ni se modificaron datos.
+- `git diff --check` aprobado. La conexión autenticada desde Database Client queda pendiente de completar por el usuario.
+- Inicialmente frontend y API no estaban levantados. Se iniciaron con `docker compose up -d frontend api`: la consulta a `http://127.0.0.1:5173/api/health` devolvió HTTP 200 con `{"status":"ok","database":"ok"}`. Al detener PostgreSQL devolvió HTTP 503 con `{"status":"unavailable","database":"unavailable"}`; después de iniciarlo con `docker compose up -d --wait postgres`, volvió a HTTP 200 sin reiniciar la API. Los tres servicios quedaron activos y PostgreSQL saludable. No se verificaron visualmente los estados de pantalla.
+
+## Punto 07 · Datos — 5 de noviembre de 2026
+
+Alcance: modelos Prisma, dos migraciones SQL transaccionales, integridad por taller, historial de titularidad, datos ficticios y pruebas de integración. No se implementó el punto 08. Se conservaron los cambios previos de acceso local a PostgreSQL; no se modificó Compose ni se aplicaron migraciones sobre el volumen de desarrollo.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Dependencias | `pnpm install --frozen-lockfile` aprobado con `CI=true`, sin modificar el lockfile ni agregar dependencias. El intento offline no encontró todos los paquetes; la instalación se completó con acceso autorizado. |
+| Esquema Prisma | `pnpm --filter backend exec prisma validate` aprobado con URL ficticia, sin consultar la base de desarrollo. |
+| Compilación | `pnpm build` aprobado: frontend con comprobación de tipos y Vite; backend con generación Prisma y TypeScript. |
+| Pruebas existentes | `pnpm test` aprobó las 6 pruebas del frontend. La prueba HTTP del backend falló por `fetch failed` en el entorno restringido; repetición autorizada de `pnpm --filter backend test`: 2/2 aprobadas. La salud usa consulta sustituida, no PostgreSQL real. |
+| Integración real | `pnpm --filter backend test:data` aprobado: 12 escenarios, 13 tests contabilizados por node:test incluyendo el contenedor padre. PostgreSQL `17.11-bookworm` real en un contenedor propio, puerto aleatorio en loopback y almacenamiento tmpfs; sin volumen persistente ni lectura de `.env`. |
+| Migraciones | Instalación desde base vacía y deploy repetido aprobados. Actualización desde la primera migración con dos talleres, cuatro usuarios y dos vehículos conserva datos, normaliza patente y completa titularidades. Ambas migraciones quedan aplicadas en cada esquema de prueba. |
+| Restricciones | Rechazo de cliente ajeno al crear/editar vehículo, FK cruzadas de titularidad, cambio de taller de registros y segunda pertenencia incluso inactiva. Unicidad de patente activa por taller, normalización, archivo/reactivación y carrera de dos inserciones comprobados. |
+| Titularidad | Creación inicial automática, cierre/apertura al cambiar cliente, rollback conjunto, bloqueo de reescritura/borrado y concurrencia de dos propietarios comprobados. La primera ejecución detectó fechas del anfitrión adelantadas respecto de PostgreSQL; se corrigió el cierre para que nunca retroceda respecto del inicio y se agregó una fecha futura explícita al escenario. Reejecución completa aprobada. |
+| Datos ficticios | Seed de dos talleres repetido sin duplicaciones ni restablecer cambios existentes; incluye tres roles en A y dueño en B, sin credenciales. SQL directo confirma normalización, FK y restricciones de borrado. |
+| Limpieza y formato | El contenedor de prueba se detuvo y eliminó; `docker ps --filter name=talleres-point07-` no mostró contenedores remanentes. `git diff --check` aprobado. |
+| Límites | Sin autorización HTTP, RLS, login, invitaciones ni pantallas de negocio. No se ejecutó CI remoto, despliegue ni migración/carga de demostración en la base local del usuario. Los comandos para aplicar esas migraciones están en la sección «Migraciones y datos de prueba» del README. |
+
+## Aplicación local del punto 07 — 5 de noviembre de 2026
+
+A solicitud del usuario se aplicaron las migraciones a la base local de Compose, conservando el volumen y la publicación del puerto para VS Code.
+
+- `docker compose up -d --wait postgres`: PostgreSQL saludable. Consulta previa a `pg_tables`: esquema público sin tablas.
+- `docker compose build api`: imagen reconstruida y compilación correcta con las migraciones del punto 07.
+- `docker compose run --rm --no-deps api pnpm db:migrate`: `202611050001_initial_data` y `202611050002_data_integrity` aplicadas correctamente.
+- `docker compose run --rm --no-deps api pnpm db:status`: esquema actualizado, sin migraciones pendientes.
+- Consulta directa a PostgreSQL confirma `taller`, `usuario`, `pertenencia`, `cliente`, `vehiculo`, `titularidad_vehiculo` y `_prisma_migrations`; ambas migraciones tienen fecha de finalización. Las seis tablas de negocio tienen cero registros.
+- No se ejecutó el seed de demostración ni se implementó el punto 08. No se borraron datos ni se restableció la base.
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.

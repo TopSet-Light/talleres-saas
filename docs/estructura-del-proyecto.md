@@ -2,7 +2,7 @@
 
 ## Alcance de este documento
 
-Organización sugerida para desarrollar el backlog de `requeriments/Requerimientos-SaaS-Talleres (1).pdf`, especialmente el mapa de épicas (p. 5), las funcionalidades (pp. 6–16), el backlog técnico (p. 17) y el modelo y navegación (p. 18).
+Organización sugerida para desarrollar el backlog de `requeriments/Requerimientos-SaaS-Talleres (1).pdf`, especialmente el mapa de épicas (p. 5), las funcionalidades (pp. 6–16), el backlog técnico (p. 17) y el modelo y navegación (p. 18). El [README](../README.md#migraciones-y-datos-de-prueba) documenta el esquema inicial implementado en el punto 07 y sus comandos de uso.
 
 Se conserva el monorepo confirmado: frontend React + Vite + TypeScript, backend NestJS + Prisma y PostgreSQL. Esta propuesta define dónde guardar cada parte; **no implementa módulos, modelos, migraciones, rutas ni pantallas futuras**. Los nombres de carpetas son una convención propuesta en inglés, mientras la interfaz del producto usa español argentino.
 
@@ -36,7 +36,7 @@ Se respeta el nombre real `docs/requeriments/` y el nombre del PDF agregado al r
 
 ## Estado actual y crecimiento
 
-Actualmente existen la pantalla de salud en `frontend/src/App.tsx`, su prueba y estilos, y los módulos `health/` y `database/` directamente en `backend/src/`. `backend/prisma/schema.prisma` contiene el datasource y generador, sin entidades de negocio. Se conservan esas ubicaciones.
+Actualmente existen la pantalla de salud en `frontend/src/App.tsx`, su prueba y estilos, y los módulos `health/` y `database/` directamente en `backend/src/`. El punto 07 incorpora taller, usuario, pertenencia, cliente, vehículo y titularidad en `backend/prisma/schema.prisma`, migraciones SQL, seed explícito de demostración y pruebas de integración en `backend/test/integration/`, con lanzador en `backend/scripts/test-data.cjs`. Se conservan las ubicaciones de los módulos actuales; acceso y endpoints de negocio siguen pendientes.
 
 Las carpetas que aparecen a continuación y no están en el repositorio son **propuestas**. Crear únicamente las necesarias para la historia en curso, sin mover el código existente en esta entrega.
 
@@ -173,15 +173,16 @@ PostgreSQL es un servicio de Compose, no un tercer paquete de pnpm. La definici�
 
 ```text
 backend/prisma/
-├── schema.prisma                     Datasource, generador y futuros modelos
-├── migrations/                       Futuras migraciones SQL generadas y revisadas
+├── schema.prisma                     Datasource, generador y modelos iniciales
+├── migrations/                       Migraciones SQL versionadas del punto 07
 │   ├── migration_lock.toml
 │   └── <timestamp>_<descripcion>/
 │       └── migration.sql
-└── seed.ts                           Futuro seed explícito de datos ficticios
+├── demo-data.cjs                     Datos ficticios compartidos con las pruebas
+└── seed-demo.cjs                     Carga explícita de demostración
 ```
 
-Hoy solo existe `schema.prisma`. Mantener inicialmente un esquema único; no dividirlo en archivos sin una necesidad concreta y sin configurar Prisma para ello. El cliente generado es una dependencia de compilación, no código para editar o versionar. `seed.ts` necesitará script y configuración de ejecución cuando se implemente: no hay un seed habilitado actualmente.
+El punto 07 incorpora estos archivos. El seed usa CommonJS ejecutable por Node sin agregar dependencias. La carga es explícita con `pnpm --filter backend db:seed:demo`, no automática. Mantener un esquema único; el cliente generado no se edita ni versiona. Los índices parciales, checks y triggers se conservan en SQL versionado.
 
 Las siguientes agrupaciones son un mapa conceptual del PDF, **no un esquema SQL/Prisma aprobado ni migraciones listas**:
 
@@ -200,7 +201,7 @@ Las siguientes agrupaciones son un mapa conceptual del PDF, **no un esquema SQL/
 
 Dashboard y búsqueda consultan datos existentes; no requieren duplicar tablas de negocio. Auditoría transversal no sustituye el historial propio de estados o titularidad.
 
-Antes de fijar el esquema, confirmar los supuestos del PDF: base compartida con aislamiento lógico, una sucursal por taller y ARS como moneda principal. El diseño deberá contemplar UUID internos, relaciones e índices acotados por `taller_id`, correlativos por taller, importes decimales exactos, transacciones en cobros/stock e idempotencia. RLS se evaluará como segunda capa. Estas decisiones se implementan y prueban en las historias de datos/acceso; no están resueltas por este árbol.
+Se confirmaron para el MVP la base compartida con aislamiento lógico, una sucursal por taller, ARS y una sola pertenencia por usuario. El 07 implementa UUID y relaciones e índices acotados por taller; la autorización de consultas corresponde al 08. Sucursales múltiples y usuarios en varios talleres requieren evolución posterior. Correlativos, importes exactos, transacciones en cobros/stock e idempotencia se abordarán con sus módulos. RLS sigue como posible segunda capa, sin implementar.
 
 Las migraciones se aplican tanto sobre una base vacía como sobre la versión anterior. No modificar una migración ya aplicada para cambiar el pasado. Las pruebas de integración deben incluir dos talleres y rechazar relaciones y consultas cruzadas. Los datos físicos viven en el volumen nombrado `postgres_data`, fuera de Git. Archivos privados y copias de seguridad requieren almacenamiento y recuperación propios cuando se aborde infraestructura.
 

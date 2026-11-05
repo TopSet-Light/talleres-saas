@@ -4,7 +4,9 @@ Aplicación web para talleres mecánicos argentinos. La orden de trabajo reúne 
 
 ## Estado del proyecto
 
-Etapa inicial de desarrollo. Esta entrega implementa los puntos 04, 05 y 06: estructura, aplicaciones base y entorno local. El objetivo es comprobar navegador → API → PostgreSQL y persistencia al recrear contenedores.
+Etapa inicial de desarrollo. Están implementados los puntos 04, 05 y 06 (estructura, aplicaciones base y entorno local) y el 07 (modelos, migraciones e integridad de datos). El punto 08 de acceso todavía no está implementado: no hay login ni endpoints de negocio.
+
+Decisiones confirmadas: base compartida con aislamiento por taller, una sucursal por taller y ARS en el MVP; cada usuario tiene una sola pertenencia y cada taller puede tener varios usuarios. Las instrucciones de datos están en [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba).
 
 ## Alcance del MVP
 
@@ -45,7 +47,10 @@ backend/
     database/             # Módulo Prisma, sin entidades de negocio
     health/               # Módulo, controlador y servicio de salud
   test/                   # Pruebas HTTP y de timeout (node:test)
-  prisma/schema.prisma    # Configuración del datasource
+  prisma/schema.prisma    # Taller, usuario, pertenencia, cliente, vehículo y titularidad
+  prisma/migrations/      # Migraciones SQL versionadas y restricciones de integridad
+  prisma/seed-demo.cjs     # Carga explícita de datos ficticios de dos talleres
+  scripts/test-data.cjs    # PostgreSQL descartable para pruebas de datos
   Dockerfile
 .dockerignore             # Ambos Dockerfiles compilan desde la raíz del monorepo
 docker-compose.yml
@@ -56,7 +61,7 @@ package.json
 README.md
 ```
 
-El código nuevo de cada aplicación va en su `src/`. Las migraciones futuras irán en `backend/prisma/migrations/`; el esquema de negocio y el aislamiento multi-tenant corresponden al punto 07. No se ejecuta ninguna migración para comprobar `SELECT 1`. No se crea `infra/` sin archivos que lo justifiquen.
+El código de las aplicaciones va en su `src/`; las migraciones están en `backend/prisma/migrations/`. El punto 07 impide relaciones cruzadas en la base; el aislamiento de operaciones HTTP se implementará con acceso y los módulos de negocio. No se ejecuta ninguna migración para comprobar `SELECT 1`. No se crea `infra/` sin archivos que lo justifiquen.
 
 ## Arranque desde un clon limpio
 
@@ -87,7 +92,9 @@ docker compose up --build
 
 Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`.
 
-La pantalla «Gestión de talleres» pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. Solo el frontend publica un puerto, ligado a `127.0.0.1`; API y base no publican puertos.
+La pantalla «Gestión de talleres» pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. El frontend y PostgreSQL publican sus puertos ligados a `127.0.0.1`, solo para acceso desde la máquina local; la API no publica puertos.
+
+Para conectar Database Client de VS Code u otro cliente local a PostgreSQL, usar host `127.0.0.1`, puerto `5432`, SSL desactivado y los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` del `.env` como usuario, contraseña y base. El ejemplo usa `talleres` para usuario y base. La API conserva su conexión interna a `postgres:5432`. Después de agregar o cambiar la publicación del puerto, aplicar con `docker compose up -d postgres`; se conserva el volumen de datos. El puerto local `5432` debe estar libre.
 
 Consulta de salud, válida en PowerShell y macOS/Linux:
 
@@ -127,6 +134,42 @@ pnpm build
 pnpm test
 ```
 
+## Migraciones y datos de prueba
+
+El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. Todavía no hay credenciales, sesiones ni validación de permisos HTTP.
+
+Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se completará en el punto 08; no hay RLS implementado.
+
+Las dos migraciones versionadas crean la estructura y agregan las restricciones e historial, conservando los datos de la primera versión. Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
+
+Desde la raíz, con la configuración local preparada:
+
+```bash
+docker compose up -d --wait postgres
+docker compose build api
+docker compose run --rm --no-deps api pnpm db:migrate
+docker compose run --rm --no-deps api pnpm db:status
+docker compose up -d api
+```
+
+La migración no se ejecuta automáticamente al iniciar ni al consultar salud. Opcionalmente, para cargar datos ficticios en la base configurada para la API:
+
+```bash
+docker compose run --rm --no-deps api pnpm db:seed:demo
+```
+
+El seed crea dos talleres, cuatro usuarios con los tres roles representados, pertenencias, un cliente y un vehículo por taller. No contiene contraseñas ni habilita login. Es repetible y no restablece datos existentes. Usarlo únicamente en desarrollo o demostración; no se ejecuta automáticamente.
+
+Con herramientas locales, configurar `DATABASE_URL` en el entorno del backend y usar `pnpm --filter backend generate`, `pnpm --filter backend db:migrate`, `pnpm --filter backend db:status` y, opcionalmente, `pnpm --filter backend db:seed:demo`. Estos comandos no cargan automáticamente el `.env` de Compose desde la raíz. No imprimir ni compartir la URL.
+
+Para probar datos y migraciones con dependencias locales instaladas y Docker disponible:
+
+```bash
+pnpm --filter backend test:data
+```
+
+El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Prueba instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
+
 ## CI y pull requests en GitHub
 
 El workflow [CI](.github/workflows/ci.yml) verifica instalación reproducible, esquema Prisma, tipos, compilación y pruebas de ambas aplicaciones en PRs hacia `main` y pushes a `main`. Usa Node y pnpm alineados con el entorno local, sin necesitar secretos ni un servidor propio. Las pruebas actuales sustituyen la consulta de PostgreSQL; la integración real sigue siendo una comprobación local.
@@ -156,7 +199,7 @@ La API espera el healthcheck inicial de PostgreSQL para el arranque conjunto. Su
 
 ## Persistencia real en un entorno descartable
 
-Usar **otro clon/directorio**, con su propio `.env`, para no interferir con datos de desarrollo. Ejecutar estos comandos desde ese clon; `-p talleres-persistencia` crea un volumen independiente. Si el puerto 5173 está ocupado, asignar `FRONTEND_PORT=5174` en ese `.env`.
+Usar **otro clon/directorio**, con su propio `.env`, para no interferir con datos de desarrollo. Ejecutar estos comandos desde ese clon; `-p talleres-persistencia` crea un volumen independiente. Si el puerto 5173 está ocupado, asignar `FRONTEND_PORT=5174` en ese `.env`. Si el puerto 5432 está ocupado, cambiar solo en el Compose de ese clon descartable la publicación a `127.0.0.1:5433:5432`; la conexión interna de la API no cambia.
 
 ```sh
 docker compose -p talleres-persistencia up --build -d
