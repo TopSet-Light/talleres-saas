@@ -24,6 +24,8 @@ services:
 
   postgres:
     image: postgres:17.11-bookworm
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Completar POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Completar POSTGRES_PASSWORD}
