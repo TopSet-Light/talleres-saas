@@ -7,7 +7,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: { usePolling: true },
-    proxy: { '/api': { target: 'http://api:3000', changeOrigin: true } },
+    // xfwd envía la IP del navegador para que el límite de intentos no la confunda con la de Vite.
+    proxy: { '/api': { target: 'http://api:3000', changeOrigin: true, xfwd: true } },
   },
   test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'] },
 });
