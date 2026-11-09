@@ -34,6 +34,7 @@ El punto 07 dejó `taller`, `usuario` (email único y normalizado) y `pertenenci
 ## 2. Contraseñas
 
 - Hash **Argon2id** con los parámetros mínimos recomendados por OWASP: 19 MiB de memoria, 2 iteraciones y paralelismo 1.
+- Implementación con `hash-wasm` (WebAssembly). El paquete nativo `argon2` se descartó durante la implementación: Control de aplicaciones de Windows bloquea su binario y las pruebas del backend no corrían en el equipo de desarrollo. El formato del hash es el estándar `$argon2id$…`, compatible con otras bibliotecas.
 - Longitud de 12 a 128 caracteres, sin reglas de composición obligatorias. Se rechazan contraseñas iguales al email.
 - El hash se guarda en una tabla de credenciales separada de `usuario` y nunca sale de la API.
 
@@ -58,6 +59,7 @@ El punto 07 dejó `taller`, `usuario` (email único y normalizado) y `pertenenci
 - Taller, usuario, credencial y pertenencia de dueño se crean en **una sola transacción**: ante cualquier falla no quedan registros parciales.
 - **El email se verifica** antes de permitir el primer inicio de sesión. Se envía un enlace con token de un solo uso, guardado como hash, que vence a las 24 horas. Se puede pedir un nuevo enlace.
 - La respuesta del registro es la misma si el email ya existía, para no confirmar qué emails están registrados. En ese caso no se crea nada.
+- Los enlaces de los emails llevan el token en el fragmento (`#token=…`), que el navegador no envía al servidor ni a otros sitios: no queda en logs de acceso ni en el encabezado `Referer`.
 - El inicio de sesión responde «Email o contraseña incorrectos» sin distinguir la causa. Solo después de validar la contraseña puede indicar que falta verificar el email.
 
 ## 6. Email
@@ -84,7 +86,7 @@ El punto 07 dejó `taller`, `usuario` (email único y normalizado) y `pertenenci
 
 - **Migración nueva:** credenciales, sesiones, invitaciones y tokens de verificación de email, con relaciones acotadas al taller donde corresponda. Se agrega como migración nueva; no se editan las existentes.
 - **Dependencias nuevas:**
-  - Backend: `argon2`, `class-validator`, `class-transformer`, `@nestjs/throttler`, `cookie-parser` y `nodemailer`.
+  - Backend: `hash-wasm`, `class-validator`, `class-transformer`, `@nestjs/throttler`, `cookie-parser` y `nodemailer`.
   - Frontend: `react-router`.
 - **Pruebas:** HTTP contra PostgreSQL real con dos talleres ficticios, cubriendo accesos cruzados, permisos, sesiones, bajas e invitaciones.
 

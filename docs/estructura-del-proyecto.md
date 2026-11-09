@@ -36,7 +36,9 @@ Se respeta el nombre real `docs/requeriments/` y el nombre del PDF agregado al r
 
 ## Estado actual y crecimiento
 
-Actualmente existen la pantalla de salud en `frontend/src/App.tsx`, su prueba y estilos, y los módulos `health/` y `database/` directamente en `backend/src/`. El punto 07 incorpora taller, usuario, pertenencia, cliente, vehículo y titularidad en `backend/prisma/schema.prisma`, migraciones SQL, seed explícito de demostración y pruebas de integración en `backend/test/integration/`, con lanzador en `backend/scripts/test-data.cjs`. Se conservan las ubicaciones de los módulos actuales; acceso y endpoints de negocio siguen pendientes.
+Actualmente existen la pantalla de salud en `frontend/src/App.tsx`, su prueba y estilos, y los módulos `health/` y `database/` directamente en `backend/src/`. El punto 07 incorpora taller, usuario, pertenencia, cliente, vehículo y titularidad en `backend/prisma/schema.prisma`, migraciones SQL, seed explícito de demostración y pruebas de integración en `backend/test/integration/`, con lanzador en `backend/scripts/test-data.cjs`. Se conservan las ubicaciones de los módulos actuales.
+
+El punto 08 (TS-19) incorpora en el frontend `src/app/` (rutas y layout), `src/features/auth/`, `src/features/users/` y `src/shared/`; la pantalla de salud se conserva en `App.tsx` y se muestra en la ruta `/estado`. En el backend agrega `src/config/`, `src/common/`, `src/mail/`, `src/modules/auth/` y `src/modules/users/`. Por ahora el alta del taller vive en `modules/auth/` porque se crea junto con su dueño; `modules/workshops/` se creará cuando haya operaciones propias del taller. Las decisiones están en `docs/decisiones/0001-acceso.md`. Los endpoints de clientes, vehículos y órdenes siguen pendientes.
 
 Las carpetas que aparecen a continuación y no están en el repositorio son **propuestas**. Crear únicamente las necesarias para la historia en curso, sin mover el código existente en esta entrega.
 
