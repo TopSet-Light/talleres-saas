@@ -17,6 +17,7 @@ if (baseUrl.hostname !== '127.0.0.1' || baseUrl.pathname !== '/point07_test') {
 const backend = path.resolve(__dirname, '../..');
 const first = '202611050001_initial_data';
 const second = '202611050002_data_integrity';
+const third = '202611090001_access';
 function urlFor(schema) {
   const url = new URL(baseUrl);
   url.searchParams.set('schema', schema);
@@ -47,7 +48,7 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       deploy('empty_install');
       assert.equal(await prisma.workshop.count(), 0);
       const migrations = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`;
-      assert.deepEqual(migrations.map(row => row.migration_name), [first, second]);
+      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third]);
     });
 
     await t.test('actualización de la primera migración conserva registros y agrega reglas e historial', async () => {

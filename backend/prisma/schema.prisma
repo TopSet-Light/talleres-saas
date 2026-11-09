@@ -30,32 +30,40 @@ model Workshop {
   memberships Membership[]
   customers   Customer[]
   vehicles    Vehicle[]
+  invitations Invitation[]
 
   @@map("taller")
 }
 
-// Identidad sin credenciales ni sesión: la autenticación corresponde al punto 08.
+// Identidad de la persona. Credencial, sesiones y verificaciones viven en tablas propias.
 model User {
-  id         String      @id @default(uuid()) @db.Uuid
-  email      String      @unique @db.VarChar(254)
-  name       String      @db.VarChar(160)
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  membership Membership?
+  id                  String              @id @default(uuid()) @db.Uuid
+  email               String              @unique @db.VarChar(254)
+  name                String              @db.VarChar(160)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  membership          Membership?
+  credential          Credential?
+  sessions            Session[]
+  emailVerifications  EmailVerification[]
+  acceptedInvitations Invitation[]        @relation("InvitationAcceptedBy")
 
   @@map("usuario")
 }
 
 model Membership {
-  id         String           @id @default(uuid()) @db.Uuid
-  workshopId String           @map("taller_id") @db.Uuid
+  id              String           @id @default(uuid()) @db.Uuid
+  workshopId      String           @map("taller_id") @db.Uuid
   // MVP: una sola pertenencia por usuario, incluso si está inactiva.
-  userId     String           @unique @map("usuario_id") @db.Uuid
-  role       Role
-  status     MembershipStatus @default(ACTIVE)
-  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  workshop   Workshop         @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  user       User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId          String           @unique @map("usuario_id") @db.Uuid
+  role            Role
+  status          MembershipStatus @default(ACTIVE)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  workshop        Workshop         @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sentInvitations Invitation[]
 
+  // Permite relaciones compuestas que exigen que el autor pertenezca al mismo taller.
+  @@unique([workshopId, userId])
   @@index([workshopId, status])
   @@map("pertenencia")
 }
@@ -120,4 +128,67 @@ model VehicleOwnership {
   @@index([workshopId, vehicleId, startedAt])
   @@index([workshopId, customerId])
   @@map("titularidad_vehiculo")
+}
+
+// Punto 08 · Acceso. Los tokens se guardan solo como hash SHA-256 en hexadecimal.
+
+model Credential {
+  userId          String    @id @map("usuario_id") @db.Uuid
+  // Argon2id; el formato se valida también en SQL.
+  passwordHash    String    @map("password_hash")
+  emailVerifiedAt DateTime? @map("email_verificado_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("credencial")
+}
+
+model Session {
+  id            String    @id @default(uuid()) @db.Uuid
+  tokenHash     String    @unique @map("token_hash") @db.Char(64)
+  userId        String    @map("usuario_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime  @default(now()) @map("ultimo_uso_at") @db.Timestamptz(3)
+  idleExpiresAt DateTime  @map("expira_inactividad_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expira_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revocada_at") @db.Timestamptz(3)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId])
+  @@map("sesion")
+}
+
+model EmailVerification {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  userId    String    @map("usuario_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt DateTime  @map("expira_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("usada_at") @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([userId])
+  @@map("verificacion_email")
+}
+
+model Invitation {
+  id           String     @id @default(uuid()) @db.Uuid
+  workshopId   String     @map("taller_id") @db.Uuid
+  email        String     @db.VarChar(254)
+  role         Role
+  tokenHash    String     @unique @map("token_hash") @db.Char(64)
+  invitedById  String     @map("invitado_por_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt    DateTime   @map("expira_at") @db.Timestamptz(3)
+  usedAt       DateTime?  @map("usada_at") @db.Timestamptz(3)
+  revokedAt    DateTime?  @map("revocada_at") @db.Timestamptz(3)
+  acceptedById String?    @map("aceptada_por_id") @db.Uuid
+  workshop     Workshop   @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  // Quien invita debe pertenecer al mismo taller.
+  invitedBy    Membership @relation(fields: [workshopId, invitedById], references: [workshopId, userId], onDelete: Restrict, onUpdate: Restrict)
+  acceptedBy   User?      @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  // La invitación pendiente única por email y taller es un índice parcial en SQL.
+  @@index([workshopId, email])
+  @@map("invitacion")
 }
