@@ -7,4 +7,117 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// El esquema de negocio y las migraciones se incorporan en el punto 07.
+enum Role {
+  OWNER
+  RECEPTION
+  MECHANIC
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
+
+model Workshop {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String       @db.VarChar(160)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  memberships Membership[]
+  customers   Customer[]
+  vehicles    Vehicle[]
+
+  @@map("taller")
+}
+
+// Identidad sin credenciales ni sesión: la autenticación corresponde al punto 08.
+model User {
+  id         String      @id @default(uuid()) @db.Uuid
+  email      String      @unique @db.VarChar(254)
+  name       String      @db.VarChar(160)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  membership Membership?
+
+  @@map("usuario")
+}
+
+model Membership {
+  id         String           @id @default(uuid()) @db.Uuid
+  workshopId String           @map("taller_id") @db.Uuid
+  // MVP: una sola pertenencia por usuario, incluso si está inactiva.
+  userId     String           @unique @map("usuario_id") @db.Uuid
+  role       Role
+  status     MembershipStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  workshop   Workshop         @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([workshopId, status])
+  @@map("pertenencia")
+}
+
+model Customer {
+  id               String             @id @default(uuid()) @db.Uuid
+  workshopId       String             @map("taller_id") @db.Uuid
+  type             CustomerType       @default(INDIVIDUAL)
+  name             String?            @db.VarChar(160)
+  phone            String             @db.VarChar(40)
+  taxId            String?            @map("dni_cuit") @db.VarChar(20)
+  email            String?            @db.VarChar(254)
+  address          String?            @db.VarChar(300)
+  notes            String?
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  workshop         Workshop           @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  vehicles         Vehicle[]
+  ownershipHistory VehicleOwnership[]
+
+  @@unique([workshopId, id])
+  @@index([workshopId, phone])
+  @@index([workshopId, name])
+  @@index([workshopId, taxId])
+  @@map("cliente")
+}
+
+model Vehicle {
+  id               String             @id @default(uuid()) @db.Uuid
+  workshopId       String             @map("taller_id") @db.Uuid
+  customerId       String             @map("cliente_id") @db.Uuid
+  plate            String?            @map("patente") @db.VarChar(20)
+  brand            String?            @db.VarChar(80)
+  model            String?            @db.VarChar(100)
+  year             Int?
+  vin              String?            @db.VarChar(30)
+  mileage          Int?
+  notes            String?
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  workshop         Workshop           @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer         Customer           @relation(fields: [workshopId, customerId], references: [workshopId, id], onDelete: Restrict, onUpdate: Restrict)
+  ownershipHistory VehicleOwnership[]
+
+  // El índice parcial de patente activa y los triggers están en SQL versionado.
+  @@unique([workshopId, id])
+  @@index([workshopId, customerId])
+  @@index([workshopId, vin])
+  @@map("vehiculo")
+}
+
+model VehicleOwnership {
+  id         String    @id @default(uuid()) @db.Uuid
+  workshopId String    @map("taller_id") @db.Uuid
+  vehicleId  String    @map("vehiculo_id") @db.Uuid
+  customerId String    @map("cliente_id") @db.Uuid
+  startedAt  DateTime  @default(now()) @map("desde") @db.Timestamptz(3)
+  endedAt    DateTime? @map("hasta") @db.Timestamptz(3)
+  vehicle    Vehicle   @relation(fields: [workshopId, vehicleId], references: [workshopId, id], onDelete: Restrict, onUpdate: Restrict)
+  customer   Customer  @relation(fields: [workshopId, customerId], references: [workshopId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([workshopId, vehicleId, startedAt])
+  @@index([workshopId, customerId])
+  @@map("titularidad_vehiculo")
+}

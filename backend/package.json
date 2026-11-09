@@ -4,7 +4,11 @@
     "generate": "prisma generate",
     "build": "pnpm generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "pnpm build && node --test test/*.test.cjs"
+    "test": "pnpm build && node --test test/*.test.cjs",
+    "db:migrate": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:seed:demo": "node prisma/seed-demo.cjs --demo",
+    "test:data": "pnpm generate && node scripts/test-data.cjs"
   },
   "dependencies": {
     "@nestjs/common": "11.2.8", "@nestjs/core": "11.2.8", "@nestjs/platform-express": "11.2.8",
