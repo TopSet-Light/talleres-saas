@@ -9,6 +9,9 @@ import { ConfigModule } from './config/config.module';
 import { HealthModule } from './health/health.module';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthModule } from './modules/auth/auth.module';
+import { EmployeesController } from './modules/users/employees.controller';
+import { InvitationsController } from './modules/users/invitations.controller';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -23,11 +26,12 @@ import { AuthModule } from './modules/auth/auth.module';
     }),
     HealthModule,
     AuthModule,
+    UsersModule,
   ],
   providers: [{ provide: APP_PIPE, useFactory: createValidationPipe }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(cookieParser(), OriginMiddleware).forRoutes(AuthController);
+    consumer.apply(cookieParser(), OriginMiddleware).forRoutes(AuthController, EmployeesController, InvitationsController);
   }
 }
