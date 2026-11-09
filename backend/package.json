@@ -9,7 +9,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:seed:demo": "node prisma/seed-demo.cjs --demo",
-    "test:data": "pnpm generate && node scripts/test-data.cjs"
+    "test:data": "pnpm build && node scripts/test-data.cjs"
   },
   "dependencies": {
     "@nestjs/common": "11.2.8",
