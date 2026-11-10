@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { ApiError, setUnauthorizedHandler } from '../../shared/api/http';
+import { ApiError, currentSessionVersion, nextSessionVersion, setUnauthorizedHandler } from '../../shared/api/http';
 import { getMe, logout as logoutRequest, Me } from './api';
 
 type SessionState =
@@ -12,6 +12,7 @@ type Session = {
   state: SessionState;
   setMe: (me: Me) => void;
   reload: () => Promise<void>;
+  /** Rechaza si el servidor no confirmó el cierre: la sesión sigue abierta. */
   logout: () => Promise<void>;
 };
 
@@ -20,32 +21,45 @@ const SessionContext = createContext<Session | null>(null);
 /** Conoce al usuario solo a través de /api/auth/me: la cookie no es legible desde JavaScript. */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: 'loading' });
+  // Cada cambio de sesión incrementa la versión. Una respuesta iniciada antes (por ejemplo,
+  // un 401 del /auth/me inicial que llega después de un login exitoso) se descarta.
+  const apply = useCallback((next: SessionState) => {
+    nextSessionVersion();
+    setState(next);
+  }, []);
 
   const reload = useCallback(async () => {
+    const requested = nextSessionVersion();
     setState({ status: 'loading' });
+    let next: SessionState;
     try {
-      setState({ status: 'authenticated', me: await getMe() });
+      next = { status: 'authenticated', me: await getMe() };
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) setState({ status: 'anonymous' });
-      else setState({ status: 'error', message: error instanceof ApiError ? error.message : 'No pudimos cargar tu sesión.' });
+      next = error instanceof ApiError && error.status === 401
+        ? { status: 'anonymous' }
+        : { status: 'error', message: error instanceof ApiError ? error.message : 'No pudimos cargar tu sesión.' };
     }
+    if (requested === currentSessionVersion()) setState(next);
   }, []);
 
   useEffect(() => {
-    // Si la API rechaza la sesión (venció o hubo una baja), se vuelve al login.
-    setUnauthorizedHandler(() => setState({ status: 'anonymous' }));
+    // Si la API rechaza la sesión vigente (venció o hubo una baja), se vuelve al login.
+    setUnauthorizedHandler(startedIn => {
+      if (startedIn === currentSessionVersion()) apply({ status: 'anonymous' });
+    });
     void reload();
     return () => setUnauthorizedHandler(undefined);
-  }, [reload]);
+  }, [reload, apply]);
 
   const value = useMemo<Session>(() => ({
     state,
     reload,
-    setMe: me => setState({ status: 'authenticated', me }),
+    setMe: me => apply({ status: 'authenticated', me }),
     logout: async () => {
-      try { await logoutRequest(); } finally { setState({ status: 'anonymous' }); }
+      await logoutRequest();
+      apply({ status: 'anonymous' });
     },
-  }), [state, reload]);
+  }), [state, reload, apply]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

@@ -14,11 +14,25 @@ export const NETWORK_ERROR = 'No pudimos conectar con el servidor. Revisá tu co
 const SERVER_ERROR = 'Ocurrió un error en el servidor. Volvé a intentar en unos minutos.';
 const TIMEOUT_MS = 10_000;
 
-let onUnauthorized: (() => void) | undefined;
+let onUnauthorized: ((startedIn: number) => void) | undefined;
+let sessionVersion = 0;
 
 /** La sesión registra cómo reaccionar si la API informa que la sesión venció. */
-export function setUnauthorizedHandler(handler: (() => void) | undefined) {
+export function setUnauthorizedHandler(handler: ((startedIn: number) => void) | undefined) {
   onUnauthorized = handler;
+}
+
+/**
+ * Versión de la sesión del navegador: cambia con cada login, logout o recarga. Cada pedido
+ * recuerda en qué versión empezó, para que un 401 de un pedido anterior no cierre una
+ * sesión iniciada después.
+ */
+export function nextSessionVersion() {
+  return ++sessionVersion;
+}
+
+export function currentSessionVersion() {
+  return sessionVersion;
 }
 
 export function toApiError(error: unknown) {
@@ -38,6 +52,7 @@ function readError(status: number, body: unknown) {
 
 /** Pedidos a rutas relativas /api; la cookie de sesión la envía el navegador. */
 export async function request<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+  const startedIn = sessionVersion;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
@@ -59,7 +74,7 @@ export async function request<T>(path: string, options: { method?: string; body?
   try { body = await response.json(); } catch { body = undefined; }
   if (!response.ok) {
     const error = readError(response.status, body);
-    if (error.status === 401 && error.code === 'UNAUTHENTICATED') onUnauthorized?.();
+    if (error.status === 401 && error.code === 'UNAUTHENTICATED') onUnauthorized?.(startedIn);
     throw error;
   }
   return body as T;

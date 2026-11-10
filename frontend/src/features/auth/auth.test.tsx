@@ -156,3 +156,38 @@ it('cierra sesión y vuelve al login', async () => {
   expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(1);
 });
+
+it('si el cierre de sesión falla, lo informa, mantiene la sesión y permite reintentar', async () => {
+  let fail = true;
+  const fetchMock = mockApi({
+    'GET /api/auth/me': () => json(200, owner),
+    'POST /api/auth/logout': () => { if (fail) throw new TypeError('Failed to fetch'); return json(204); },
+  });
+  renderAt('/');
+  fireEvent.click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
+  expect(await screen.findByText(/No se cerró la sesión/)).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(2);
+});
+
+it('un 401 tardío del /auth/me inicial no pisa un login exitoso', async () => {
+  const pendingMe: Array<(response: Response) => void> = [];
+  mockApi({
+    'GET /api/auth/me': () => new Promise<Response>(resolve => { pendingMe.push(resolve); }),
+    'POST /api/auth/login': () => json(200, owner),
+  });
+  renderAt('/login');
+  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  fill('Email', 'duena@example.invalid');
+  fill('Contraseña', 'contraseña de prueba');
+  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+  expect(await screen.findByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  // Recién ahora responden las consultas iniciales (StrictMode hace dos).
+  for (const resolve of pendingMe) resolve(anonymous());
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Iniciar sesión' })).not.toBeInTheDocument();
+});
