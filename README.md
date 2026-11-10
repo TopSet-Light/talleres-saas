@@ -102,7 +102,7 @@ docker compose up --build
 
 En un clon nuevo o después de incorporar migraciones, aplicarlas antes de usar la aplicación: ver [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba). Sin ellas, la salud responde, pero el registro y el login fallan.
 
-Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`. Sin sesión, la aplicación muestra el login; el uso está en [Acceso y usuarios](#acceso-y-usuarios). Los emails de verificación e invitación llegan a Mailpit, en **http://localhost:8025** (`MAILPIT_PORT`).
+Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`. Sin sesión, la aplicación muestra el login; el uso está en [Acceso y usuarios](#acceso-y-usuarios). Los emails de registro e invitación llegan a Mailpit, en **http://localhost:8025** (`MAILPIT_PORT`).
 
 La pantalla de salud está en **http://localhost:5173/estado**: pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. El frontend, PostgreSQL y la interfaz de Mailpit publican sus puertos ligados a `127.0.0.1`, solo para acceso desde la máquina local; la API y el SMTP de Mailpit no publican puertos.
 
@@ -157,11 +157,11 @@ pnpm test
 
 ## Migraciones y datos de prueba
 
-El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. El punto 08 agrega credenciales, sesiones, verificaciones de email e invitaciones; ver [Acceso y usuarios](#acceso-y-usuarios).
+El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. El punto 08 agrega credenciales, sesiones, solicitudes de registro e invitaciones; ver [Acceso y usuarios](#acceso-y-usuarios).
 
 Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se aplica en la API desde el punto 08; no hay RLS implementado.
 
-Las migraciones versionadas son tres: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes. Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
+Las migraciones versionadas son cuatro: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes, y `202611100001_pending_registration` reemplaza la verificación de email por solicitudes de registro pendientes (elimina `verificacion_email`, que solo existió en la rama TS-19). Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
 
 Desde la raíz, con la configuración local preparada:
 
@@ -189,7 +189,7 @@ Para probar datos, migraciones y acceso HTTP con dependencias locales instaladas
 pnpm --filter backend test:data
 ```
 
-El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Compila el backend y ejecuta los archivos de `backend/test/integration/`, cada uno en su propio esquema. Los datos prueban instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. El acceso levanta la API real contra esa base, con los emails capturados en memoria: registro atómico, verificación, sesiones, invitaciones, permisos, accesos cruzados entre dos talleres, bajas y límites de intentos. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
+El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Compila el backend y ejecuta los archivos de `backend/test/integration/`, cada uno en su propio esquema. Los datos prueban instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. El acceso levanta la API real contra esa base, con los emails capturados en memoria: registro en dos pasos (incluido el intento de apropiarse de un email ajeno), sesiones, invitaciones, permisos, accesos cruzados entre dos talleres, bajas y límites de intentos, también con `X-Forwarded-For` falso. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
 
 ## Acceso y usuarios
 
@@ -197,14 +197,14 @@ Implementa AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 (TS-19). Las decisiones,
 
 Recorrido local:
 
-1. En **/registro**, crear el taller con su dueño/administrador. La contraseña tiene entre 12 y 128 caracteres.
-2. Abrir el email en Mailpit (**http://localhost:8025**) y seguir el enlace de verificación. Vence a las 24 horas; desde el login se puede pedir otro.
+1. En **/registro**, cargar el nombre del taller, el del dueño/administrador y el email. No se pide contraseña ni se crea la cuenta todavía.
+2. Abrir el email en Mailpit (**http://localhost:8025**) y seguir el enlace. Ahí se elige la contraseña (12 a 128 caracteres) y recién entonces se crean el taller y la cuenta. El enlace vence a las 24 horas; registrarse de nuevo envía otro sin anular los anteriores, hasta 3 por hora por email.
 3. Iniciar sesión en **/login**. En **/empleados**, el dueño invita por email con un rol, cambia roles, desactiva y reactiva accesos y revoca invitaciones pendientes.
 4. La persona invitada abre el enlace del email (**/invitacion**), elige nombre y contraseña, e inicia sesión.
 
 | Ruta de la API | Acceso |
 | --- | --- |
-| `POST /api/auth/register`, `/verify-email`, `/resend-verification`, `/login` | Públicas, con límite por IP |
+| `POST /api/auth/register`, `/registration/preview`, `/registration/complete`, `/login` | Públicas, con límite por IP |
 | `POST /api/auth/logout`, `GET /api/auth/me` | Sesión |
 | `GET /api/employees`, `PATCH /api/employees/:id` | Dueño/Administrador |
 | `GET` y `POST /api/invitations`, `DELETE /api/invitations/:id` | Dueño/Administrador |
@@ -216,7 +216,8 @@ Reglas principales:
 - Cada pedido comprueba la sesión y que la pertenencia siga activa: una baja corta el acceso en la operación siguiente y revoca las sesiones abiertas.
 - Taller y rol salen siempre de la sesión o de la invitación guardada. Un id de otro taller responde 404 y los campos no previstos se rechazan con 400.
 - Las operaciones de cambio con un `Origin` distinto de `APP_URL` se rechazan con 403. Por eso la aplicación debe abrirse en la URL de `APP_URL` (en local, `http://localhost:5173`, no `127.0.0.1`).
-- Registro, login, verificación e invitaciones públicas admiten 10 pedidos por minuto por IP (`AUTH_RATE_LIMIT`). El login además se bloquea 15 minutos tras 5 intentos fallidos para un email. Los contadores viven en memoria y se reinician con la API.
+- El formulario de registro solo guarda una solicitud y envía el enlace: la contraseña la elige quien controla el buzón, así nadie puede apropiarse de un email ajeno. Completar un registro anula las demás solicitudes de ese email.
+- Las rutas públicas de registro, login e invitaciones admiten 10 pedidos por minuto por IP (`AUTH_RATE_LIMIT`). La IP sale de la última entrada de `X-Forwarded-For`, que agrega el proxy: la API confía en `TRUST_PROXY_HOPS` proxies (1 por defecto) y Vite reemplaza el encabezado que envía el cliente. En producción, el proxy del servidor también debe reemplazarlo. El login además se bloquea 15 minutos tras 5 intentos fallidos para un email. Los contadores viven en memoria y se reinician con la API.
 - Las contraseñas se guardan con Argon2id (`hash-wasm`, sin binarios nativos). Los mensajes de error no revelan si un email existe ni si pertenece a otro taller.
 - Limitación del MVP: la pertenencia única incluye las inactivas, así que un empleado dado de baja no puede sumarse a otro taller con el mismo email.
 
@@ -289,7 +290,7 @@ En el entorno descartable usar `docker compose -p talleres-persistencia down --v
 
 ## Configuración y secretos
 
-`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT` y `COOKIE_SECURE`. Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente. Mailpit es solo para desarrollo: en staging habrá que configurar un proveedor SMTP real, todavía no elegido. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
+`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS` y `COOKIE_SECURE`. Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente. Mailpit es solo para desarrollo: en staging habrá que configurar un proveedor SMTP real, todavía no elegido. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
 
 ## Verificaciones de esta entrega
 

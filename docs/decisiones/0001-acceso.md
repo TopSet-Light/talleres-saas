@@ -49,18 +49,22 @@ El punto 07 dejó `taller`, `usuario` (email único y normalizado) y `pertenenci
 
 ## 4. Límite de intentos
 
-- Registro, inicio de sesión, aceptación de invitación y verificación de email tienen límite por IP: 10 peticiones por minuto.
+- Registro, inicio de sesión e invitaciones públicas tienen límite por IP: 10 peticiones por minuto.
+- La IP es la última entrada de `X-Forwarded-For`, la que agrega el proxy. La API confía en una cantidad fija de proxies (`TRUST_PROXY_HOPS`, 1 por defecto), nunca en cualquier dirección privada, y el proxy reemplaza el encabezado recibido del cliente (Vite en local; el proxy del VPS deberá hacer lo mismo). Corrección de la revisión del PR #4: antes Vite conservaba el encabezado y la API confiaba en toda la cadena privada, así que el cliente podía elegir su IP.
+- El registro envía como máximo 3 emails por hora al mismo destinatario.
 - El inicio de sesión además limita 5 intentos fallidos por email en 15 minutos.
 - El MVP corre en una sola instancia, así que los contadores viven en memoria y se reinician con la API. Si se escala a varias instancias, habrá que moverlos a un almacenamiento compartido.
 
 ## 5. Registro (AUTH-01) y verificación de email
 
-- **Datos obligatorios:** nombre del taller, nombre del dueño, email y contraseña.
-- Taller, usuario, credencial y pertenencia de dueño se crean en **una sola transacción**: ante cualquier falla no quedan registros parciales.
-- **El email se verifica** antes de permitir el primer inicio de sesión. Se envía un enlace con token de un solo uso, guardado como hash, que vence a las 24 horas. Se puede pedir un nuevo enlace.
-- La respuesta del registro es la misma si el email ya existía, para no confirmar qué emails están registrados. En ese caso no se crea nada.
+- **Datos del formulario:** nombre del taller, nombre del dueño y email. **No se pide contraseña.**
+- El formulario solo guarda una solicitud en `registro_pendiente` y envía un enlace de un solo uso, guardado como hash, que vence a las 24 horas. No crea usuario, taller ni credencial.
+- **La contraseña se elige al abrir el enlace.** Recién ahí se crean taller, usuario, credencial (ya verificada) y pertenencia de dueño, en **una sola transacción**: ante cualquier falla no quedan registros parciales y el enlace sigue sirviendo.
+- Varias solicitudes del mismo email conviven. Registrarse de nuevo envía otro enlace **sin anular los anteriores**, con un máximo de 3 emails por hora por destinatario. Completar una solicitud anula las demás de ese email.
+- Por qué: en la primera versión el formulario fijaba la contraseña antes de verificar el buzón, así que un tercero podía registrar un email ajeno, y cuando el titular verificaba activaba la contraseña del tercero. Además, el reenvío anulaba el enlace vigente con solo conocer el email. Ambos casos se reportaron en la revisión del PR #4.
+- La respuesta del registro es la misma si el email ya tiene cuenta, para no confirmar qué emails están registrados. En ese caso no se guarda nada ni se envía email. Quien completa un enlace de un email que ya tiene cuenta (porque se creó por otro camino mientras tanto) recibe «Ese email ya tiene una cuenta»: controla el buzón, así que puede saberlo.
 - Los enlaces de los emails llevan el token en el fragmento (`#token=…`), que el navegador no envía al servidor ni a otros sitios: no queda en logs de acceso ni en el encabezado `Referer`.
-- El inicio de sesión responde «Email o contraseña incorrectos» sin distinguir la causa. Solo después de validar la contraseña puede indicar que falta verificar el email.
+- El inicio de sesión responde «Email o contraseña incorrectos» sin distinguir la causa. Solo después de validar la contraseña informa un acceso desactivado.
 
 ## 6. Email
 

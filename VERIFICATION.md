@@ -89,6 +89,23 @@ Alcance: AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 según `docs/decisiones/00
 | Formato | `git diff --check` aprobado. |
 | Pendiente | No se revisaron las pantallas en un navegador ni el diseño responsive (Definition of Done 06): las pruebas del frontend usan jsdom y API simulada. CI remoto pendiente hasta el push. Las pruebas de integración siguen fuera del workflow de CI. Sin lint configurado. Falta elegir el proveedor de email para staging. |
 
+## Revisión del PR #4 (TS-19) — 10 de noviembre de 2026
+
+Correcciones pedidas por Ezequiel-Cagolo. Mismo entorno que la sección anterior.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Registro con contraseña elegida por un tercero (comentario 1) | Corregido: el formulario solo guarda una solicitud (`202611100001_pending_registration`) y la contraseña se elige al abrir el enlace. Prueba de integración: el intruso registra primero el email del titular y no puede entrar; el titular completa su propio enlace, entra a su taller y el enlace del intruso queda anulado. |
+| IP elegida por el cliente (comentario 2) | Corregido: Vite reemplaza `X-Forwarded-For` (`frontend/vite.proxy.ts`) y la API confía en `TRUST_PROXY_HOPS` proxies. Integración: con límite 3, cuatro logins con distinta primera entrada de `X-Forwarded-For` recibieron `401,401,401,429`. Pruebas unitarias del proxy (3). |
+| Reenvío que anulaba enlaces (comentario 3) | Corregido: registrarse de nuevo no anula enlaces y hay un máximo de 3 emails por hora por destinatario. Integración: el cuarto registro no envía email y el primer enlace sigue vigente. |
+| Logout fallido y `/auth/me` tardío (comentarios 4 y 5) | Corregido en `session.tsx` y `AppLayout.tsx`. Pruebas del frontend: un logout con error de red mantiene la sesión, muestra el error y el reintento funciona; un 401 del `/auth/me` inicial que llega después del login no lo pisa. La prueba detectó que el aviso global de 401 también debía ignorar pedidos anteriores, y se corrigió. |
+| Tipos de `@Transform` (comentarios 6 y 7) | Aplicados en `auth/dto.ts` y `users/dto.ts`. |
+| Comprobaciones del CI en local | `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` aprobados. `pnpm test`: frontend 26/26, backend 8/8. |
+| Integración con PostgreSQL real | `pnpm --filter backend test:data`: 26/26, con las cuatro migraciones. |
+| Recorrido real en Docker | Proyecto descartable `talleres-e2e`, eliminado con `down --volumes`: 11/12 comprobaciones aprobadas por HTTP a través de Vite y Mailpit, incluidos el intento del intruso y el límite por destinatario. La restante fue un error del script: esperaba el 429 en el pedido 11 de una serie de logins con `X-Forwarded-For` distinto, pero llegó en el 9 porque también se contaron los 2 logins previos de la misma IP. El 429 confirma que el encabezado falso no evade el límite. |
+| Base local de desarrollo | Sin migrar en esta revisión: el entorno local quedó apagado a pedido del usuario. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
+| Pendiente | Revisión visual en navegador y diseño según Figma (indicado por la revisión). Proveedor SMTP de producción con autenticación, `MAIL_FROM` de dominio verificado y `APP_URL` HTTPS (comentario 8). Pruebas de integración fuera del CI. Sin lint configurado. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.
