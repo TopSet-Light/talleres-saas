@@ -23,7 +23,7 @@ export class CreateInvitationDto extends EmailField {
 }
 
 export class AcceptInvitationDto extends TokenDto {
-  @Transform(({ value }) => trimText(value))
+  @Transform(({ value }: { value: unknown }) => trimText(value))
   @IsString({ message: 'Ingresá tu nombre.' })
   @Length(2, 160, { message: 'Tu nombre debe tener entre 2 y 160 caracteres.' })
   name!: string;
