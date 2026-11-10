@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { apiProxy } from './vite.proxy';
 
 export default defineConfig({
   plugins: [react()],
@@ -7,8 +8,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: { usePolling: true },
-    // xfwd envía la IP del navegador para que el límite de intentos no la confunda con la de Vite.
-    proxy: { '/api': { target: 'http://api:3000', changeOrigin: true, xfwd: true } },
+    // Reemplaza X-Forwarded-For con la IP de la conexión (ver vite.proxy.ts).
+    proxy: apiProxy,
   },
   test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'] },
 });

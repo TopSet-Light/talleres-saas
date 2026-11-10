@@ -43,9 +43,10 @@ async function startApi(rateLimit) {
 /** Navegador mínimo: guarda la cookie de sesión y envía el Origin de la aplicación. */
 class Browser {
   constructor(api) { this.api = api; this.cookie = undefined; }
-  async call(method, route, body, { origin = ORIGIN } = {}) {
+  async call(method, route, body, { origin = ORIGIN, forwardedFor } = {}) {
     const headers = {};
     if (origin) headers.origin = origin;
+    if (forwardedFor) headers['x-forwarded-for'] = forwardedFor;
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (this.cookie) headers.cookie = this.cookie;
     const response = await fetch(`${this.api.url}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -384,6 +385,19 @@ test('límite de intentos por IP y por email', async () => {
     for (let i = 0; i < 4; i++) statuses.push((await browser.post('/auth/login', { email: `ip${i}@example.invalid`, password: 'x' })).status);
     assert.deepEqual(statuses, [401, 401, 401, 429], 'cuarto pedido por minuto desde la misma IP');
   } finally { await api.app.close(); }
+
+  // Revisión de TS-19: el cliente no elige la IP. Con un proxy delante (TRUST_PROXY_HOPS=1)
+  // solo cuenta la última entrada, la que agrega el proxy; variar las anteriores no evade el límite.
+  const spoofed = await startApi(3);
+  try {
+    const browser = new Browser(spoofed);
+    const statuses = [];
+    for (let i = 0; i < 4; i++) {
+      statuses.push((await browser.post('/auth/login', { email: `xff${i}@example.invalid`, password: 'x' },
+        { forwardedFor: `203.0.113.${i + 1}, 198.51.100.7` })).status);
+    }
+    assert.deepEqual(statuses, [401, 401, 401, 429], 'X-Forwarded-For falso no reinicia el contador');
+  } finally { await spoofed.app.close(); }
 
   const api2 = await startApi(1000);
   try {

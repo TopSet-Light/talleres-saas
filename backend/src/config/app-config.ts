@@ -12,14 +12,20 @@ export interface AppConfig {
   mailFrom: string;
   /** Peticiones por minuto y por IP en registro, login, invitaciones y verificación. */
   authRateLimit: number;
+  /**
+   * Cantidad de proxies delante de la API que reemplazan X-Forwarded-For (Vite en local,
+   * el proxy del VPS en producción). Con 0 se usa la dirección de la conexión.
+   */
+  trustProxyHops: number;
 }
 
-function positiveInteger(value: string | undefined, fallback: number, name: string) {
+function integer(value: string | undefined, fallback: number, name: string, min: number) {
   if (value === undefined || value === '') return fallback;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${name} debe ser un entero positivo`);
+  if (!Number.isInteger(parsed) || parsed < min) throw new Error(`${name} debe ser un entero mayor o igual a ${min}`);
   return parsed;
 }
+const positiveInteger = (value: string | undefined, fallback: number, name: string) => integer(value, fallback, name, 1);
 
 // Los valores por defecto solo sirven para desarrollo local; ninguno es secreto.
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -43,5 +49,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtpPort: positiveInteger(env.SMTP_PORT, 1025, 'SMTP_PORT'),
     mailFrom: env.MAIL_FROM || 'Gestión de talleres <no-responder@talleres.local>',
     authRateLimit: positiveInteger(env.AUTH_RATE_LIMIT, 10, 'AUTH_RATE_LIMIT'),
+    trustProxyHops: integer(env.TRUST_PROXY_HOPS, 1, 'TRUST_PROXY_HOPS', 0),
   };
 }

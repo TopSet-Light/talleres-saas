@@ -1,9 +1,12 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { APP_CONFIG, AppConfig } from './config/app-config';
 
 /** Configuración HTTP compartida por el arranque real y las pruebas. */
 export function configureApp(app: NestExpressApplication) {
   app.setGlobalPrefix('api');
-  // Confiar solo en proxies de redes privadas (Vite en Compose, proxy del VPS) para obtener la IP real.
-  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+  // Revisión de TS-19: confiar en una cantidad fija de proxies, no en cualquier dirección
+  // privada. Solo se toma la última entrada de X-Forwarded-For, la que agregó el proxy;
+  // lo que envíe el cliente queda descartado (Vite además lo reemplaza).
+  app.set('trust proxy', app.get<AppConfig>(APP_CONFIG).trustProxyHops);
   return app;
 }

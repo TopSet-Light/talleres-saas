@@ -38,6 +38,9 @@ test('configuración: valores locales por defecto, Secure con https y errores si
   assert.equal(local.appOrigin, 'http://localhost:5173');
   assert.equal(local.cookieSecure, false);
   assert.equal(local.authRateLimit, 10);
+  assert.equal(local.trustProxyHops, 1);
+  assert.equal(loadConfig({ TRUST_PROXY_HOPS: '0' }).trustProxyHops, 0);
+  assert.throws(() => loadConfig({ TRUST_PROXY_HOPS: '-1' }), /TRUST_PROXY_HOPS/);
   assert.equal(loadConfig({ APP_URL: 'https://taller.example/' }).cookieSecure, true);
   assert.equal(loadConfig({ APP_URL: 'https://taller.example/' }).appUrl, 'https://taller.example');
   assert.equal(loadConfig({ APP_URL: 'https://taller.example', COOKIE_SECURE: 'false' }).cookieSecure, false);
