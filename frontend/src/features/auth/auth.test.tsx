@@ -8,6 +8,10 @@ function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+const registration = {
+  workshopName: 'Taller ficticio Norte', ownerName: 'Dueña Norte', email: 'duena@example.invalid', expiresAt: '2026-11-11T12:00:00.000Z',
+};
+
 it('sin sesión redirige al login', async () => {
   mockApi({ 'GET /api/auth/me': anonymous });
   const router = renderAt('/');
@@ -27,69 +31,93 @@ it('inicia sesión y muestra el taller y el menú del dueño', async () => {
   expect(calls(fetchMock, 'POST /api/auth/login')).toEqual([{ email: 'duena@example.invalid', password: 'contraseña de prueba' }]);
 });
 
-it('muestra el error genérico y permite reenviar la verificación', async () => {
-  const fetchMock = mockApi({
+it('muestra el error genérico del login', async () => {
+  mockApi({
     'GET /api/auth/me': anonymous,
-    'POST /api/auth/login': () => json(403, { code: 'EMAIL_NOT_VERIFIED', message: 'Verificá tu email antes de iniciar sesión.' }),
-    'POST /api/auth/resend-verification': () => json(202, { message: 'Te enviamos un nuevo enlace.' }),
+    'POST /api/auth/login': () => json(401, { code: 'INVALID_CREDENTIALS', message: 'Email o contraseña incorrectos.' }),
   });
   renderAt('/login');
   await screen.findByRole('heading', { name: 'Iniciar sesión' });
-  fill('Email', 'pendiente@example.invalid');
+  fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'x');
   fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
-  expect(await screen.findByText('Verificá tu email antes de iniciar sesión.')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Reenviar email de verificación' }));
-  expect(await screen.findByText('Te enviamos un nuevo enlace.')).toBeInTheDocument();
-  expect(calls(fetchMock, 'POST /api/auth/resend-verification')).toEqual([{ email: 'pendiente@example.invalid' }]);
+  expect(await screen.findByText('Email o contraseña incorrectos.')).toBeInTheDocument();
 });
 
-it('registro: valida la confirmación, muestra errores de la API y luego pide revisar el email', async () => {
+it('registro: pide solo los datos del taller, muestra errores de la API y luego pide revisar el email', async () => {
   let attempt = 0;
   const fetchMock = mockApi({
     'GET /api/auth/me': anonymous,
     'POST /api/auth/register': () => (++attempt === 1
-      ? json(400, { code: 'VALIDATION_ERROR', message: 'Revisá los datos ingresados.', fields: { password: 'La contraseña no puede ser igual al email.' } })
+      ? json(400, { code: 'VALIDATION_ERROR', message: 'Revisá los datos ingresados.', fields: { email: 'Ingresá un email válido.' } })
       : json(202, { message: 'ok' })),
   });
   renderAt('/registro');
   await screen.findByRole('heading', { name: 'Registrá tu taller' });
+  expect(screen.queryByLabelText(/Contraseña/)).not.toBeInTheDocument();
   fill('Nombre del taller', 'Taller ficticio');
   fill('Tu nombre', 'Persona');
+  fill('Email', 'persona');
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
+  expect(await screen.findByText('Ingresá un email válido.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true');
+
   fill('Email', 'persona@example.invalid');
-  fill('Contraseña', 'contraseña larga uno');
-  fill('Repetí la contraseña', 'otra contraseña');
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
-  expect(await screen.findByText('Las contraseñas no coinciden.')).toBeInTheDocument();
-  expect(calls(fetchMock, 'POST /api/auth/register')).toHaveLength(0);
-
-  fill('Repetí la contraseña', 'contraseña larga uno');
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
-  expect(await screen.findByText('La contraseña no puede ser igual al email.')).toBeInTheDocument();
-  expect(screen.getByLabelText('Contraseña')).toHaveAttribute('aria-invalid', 'true');
-
   fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
   expect(await screen.findByRole('heading', { name: 'Revisá tu email' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/register')[1]).toEqual({
-    workshopName: 'Taller ficticio', ownerName: 'Persona', email: 'persona@example.invalid', password: 'contraseña larga uno',
+    workshopName: 'Taller ficticio', ownerName: 'Persona', email: 'persona@example.invalid',
   });
 });
 
-it('verifica el email una sola vez aunque React monte dos veces', async () => {
+it('el enlace del email muestra el registro y permite elegir la contraseña', async () => {
   const fetchMock = mockApi({
     'GET /api/auth/me': anonymous,
-    'POST /api/auth/verify-email': () => json(200, { message: 'Email verificado. Ya podés iniciar sesión.' }),
+    'POST /api/auth/registration/preview': () => json(200, registration),
+    'POST /api/auth/registration/complete': () => json(201, { message: 'Registro completo. Ya podés iniciar sesión.' }),
   });
   renderAt(`/verificar-email#token=${TOKEN}`);
-  expect(await screen.findByText('Email verificado. Ya podés iniciar sesión.')).toBeInTheDocument();
-  expect(calls(fetchMock, 'POST /api/auth/verify-email')).toEqual([{ token: TOKEN }]);
+  expect(await screen.findByText('Taller ficticio Norte')).toBeInTheDocument();
+  expect(screen.getByText('duena@example.invalid')).toBeInTheDocument();
+  fill('Elegí tu contraseña', 'contraseña de prueba');
+  fill('Repetí la contraseña', 'otra contraseña');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
+  expect(await screen.findByText('Las contraseñas no coinciden.')).toBeInTheDocument();
+  expect(calls(fetchMock, 'POST /api/auth/registration/complete')).toHaveLength(0);
+
+  fill('Repetí la contraseña', 'contraseña de prueba');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
+  expect(await screen.findByText('Registro completo. Ya podés iniciar sesión.')).toBeInTheDocument();
+  expect(calls(fetchMock, 'POST /api/auth/registration/complete')).toEqual([{ token: TOKEN, password: 'contraseña de prueba' }]);
 });
 
-it('un enlace sin token muestra error sin llamar a la API', async () => {
-  const fetchMock = mockApi({ 'GET /api/auth/me': anonymous });
+it('si el email ya tiene cuenta, ofrece iniciar sesión', async () => {
+  mockApi({
+    'GET /api/auth/me': anonymous,
+    'POST /api/auth/registration/preview': () => json(200, registration),
+    'POST /api/auth/registration/complete': () => json(409, { code: 'ALREADY_REGISTERED', message: 'Ese email ya tiene una cuenta. Iniciá sesión.' }),
+  });
+  renderAt(`/verificar-email#token=${TOKEN}`);
+  await screen.findByText('Taller ficticio Norte');
+  fill('Elegí tu contraseña', 'contraseña de prueba');
+  fill('Repetí la contraseña', 'contraseña de prueba');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
+  expect(await screen.findByText('Ese email ya tiene una cuenta. Iniciá sesión.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Ir a iniciar sesión' })).toBeInTheDocument();
+});
+
+it('un enlace sin token o vencido muestra el error sin formulario', async () => {
+  const fetchMock = mockApi({
+    'GET /api/auth/me': anonymous,
+    'POST /api/auth/registration/preview': () => json(400, { code: 'INVALID_TOKEN', message: 'El enlace no es válido, ya se usó o venció.' }),
+  });
   renderAt('/verificar-email');
   expect(await screen.findByText(/El enlace no es válido/)).toBeInTheDocument();
-  expect(calls(fetchMock, 'POST /api/auth/verify-email')).toHaveLength(0);
+  expect(calls(fetchMock, 'POST /api/auth/registration/preview')).toHaveLength(0);
+  cleanup();
+  renderAt(`/verificar-email#token=${TOKEN}`);
+  expect(await screen.findByText('El enlace no es válido, ya se usó o venció.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Crear cuenta' })).not.toBeInTheDocument();
 });
 
 it('acepta una invitación mostrando taller, rol y email de la invitación', async () => {

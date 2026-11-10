@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { ApiError, toApiError } from '../../../shared/api/http';
 import { Alert } from '../../../shared/ui/Alert';
 import { Field } from '../../../shared/ui/Field';
-import { login, resendVerification } from '../api';
+import { login } from '../api';
 import { useSession } from '../session';
 
 export function LoginPage() {
@@ -12,8 +12,6 @@ export function LoginPage() {
   const location = useLocation();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [email, setEmail] = useState('');
 
   if (state.status === 'authenticated') return <Navigate to="/" replace />;
   const from = (location.state as { from?: string } | null)?.from ?? '/';
@@ -23,7 +21,6 @@ export function LoginPage() {
     const form = new FormData(event.currentTarget);
     setSubmitting(true);
     setError(null);
-    setNotice(null);
     try {
       setMe(await login(String(form.get('email') ?? ''), String(form.get('password') ?? '')));
       navigate(from, { replace: true });
@@ -34,30 +31,12 @@ export function LoginPage() {
     }
   }
 
-  async function onResend() {
-    try {
-      setNotice((await resendVerification(email)).message);
-      setError(null);
-    } catch (caught) {
-      setError(toApiError(caught));
-    }
-  }
-
   return (
     <main className="page narrow">
       <h1>Iniciar sesión</h1>
-      {error && (
-        <Alert tone="error">
-          <p>{error.message}</p>
-          {error.code === 'EMAIL_NOT_VERIFIED' && (
-            <button type="button" className="link-button" onClick={() => void onResend()}>Reenviar email de verificación</button>
-          )}
-        </Alert>
-      )}
-      {notice && <Alert tone="success">{notice}</Alert>}
+      {error && <Alert tone="error">{error.message}</Alert>}
       <form onSubmit={onSubmit} noValidate>
-        <Field label="Email" name="email" type="email" autoComplete="email" required value={email}
-          onChange={event => setEmail(event.target.value)} error={error?.fields.email} />
+        <Field label="Email" name="email" type="email" autoComplete="email" required error={error?.fields.email} />
         <Field label="Contraseña" name="password" type="password" autoComplete="current-password" required error={error?.fields.password} />
         <button type="submit" disabled={submitting}>{submitting ? 'Ingresando…' : 'Ingresar'}</button>
       </form>

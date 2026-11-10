@@ -72,13 +72,17 @@ function tokenFrom(message) {
 
 const PASSWORD = 'contraseña de prueba segura';
 
-async function registerAndLogin(api, browser, { workshopName, ownerName, email }) {
+async function register(api, browser, { workshopName, ownerName, email }) {
   const before = api.outbox.length;
-  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email, password: PASSWORD })).status, 202);
-  assert.equal(api.outbox.length, before + 1);
-  const token = tokenFrom(api.outbox.at(-1));
-  assert.equal((await browser.post('/auth/verify-email', { token })).status, 200);
-  const login = await browser.post('/auth/login', { email, password: PASSWORD });
+  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email })).status, 202);
+  assert.equal(api.outbox.length, before + 1, 'envía el enlace al buzón');
+  return tokenFrom(api.outbox.at(-1));
+}
+
+async function registerAndLogin(api, browser, data, password = PASSWORD) {
+  const token = await register(api, browser, data);
+  assert.equal((await browser.post('/auth/registration/complete', { token, password })).status, 201);
+  const login = await browser.post('/auth/login', { email: data.email, password });
   assert.equal(login.status, 200);
   return login.body;
 }
@@ -112,55 +116,78 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
 
       const mails = api.outbox.length;
       const repeated = await new Browser(api).post('/auth/register', {
-        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid', password: PASSWORD,
+        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid',
       });
       assert.equal(repeated.status, 202, 'misma respuesta que un registro nuevo');
-      assert.equal(await prisma.workshop.count({ where: { name: 'Taller duplicado' } }), 0, 'no deja un taller huérfano');
-      assert.equal(api.outbox.length, mails);
+      assert.equal(api.outbox.length, mails, 'un email ya registrado no recibe enlaces');
+      assert.equal(await prisma.pendingRegistration.count({ where: { workshopName: 'Taller duplicado' } }), 0);
 
       const invalid = await new Browser(api).post('/auth/register', { workshopName: 'X', ownerName: '', email: 'no-es-email', password: 'corta' });
       assert.equal(invalid.status, 400);
       assert.deepEqual(Object.keys(invalid.body.fields).sort(), ['email', 'ownerName', 'password', 'workshopName']);
+      assert.equal(invalid.body.fields.password, 'Este campo no está permitido.', 'el registro ya no recibe contraseña');
       assert.ok(!invalid.text.includes('corta'), 'no repite los valores enviados');
-      const sameAsEmail = await new Browser(api).post('/auth/register', {
-        workshopName: 'Taller Igual', ownerName: 'Persona', email: 'igual.email@example.invalid', password: 'igual.email@example.invalid',
-      });
+
+      const sameAsEmailToken = await register(api, new Browser(api), { workshopName: 'Taller Igual', ownerName: 'Persona', email: 'igual.email@example.invalid' });
+      const sameAsEmail = await new Browser(api).post('/auth/registration/complete', { token: sameAsEmailToken, password: 'igual.email@example.invalid' });
       assert.equal(sameAsEmail.status, 400);
       assert.ok(sameAsEmail.body.fields.password);
 
-      // Una falla en el último paso de la transacción no deja registros parciales.
+      // Una falla en el último paso de la transacción no deja registros parciales y el enlace sigue sirviendo.
+      const failingToken = await register(api, new Browser(api), { workshopName: 'Taller que falla', ownerName: 'Persona que falla', email: 'falla@example.invalid' });
       await prisma.$executeRawUnsafe(`CREATE FUNCTION falla_prueba() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN RAISE EXCEPTION 'falla simulada'; END; $$`);
-      await prisma.$executeRawUnsafe('CREATE TRIGGER falla_prueba BEFORE INSERT ON verificacion_email FOR EACH ROW EXECUTE FUNCTION falla_prueba()');
+      await prisma.$executeRawUnsafe('CREATE TRIGGER falla_prueba BEFORE INSERT ON pertenencia FOR EACH ROW EXECUTE FUNCTION falla_prueba()');
       try {
-        const failed = await new Browser(api).post('/auth/register', {
-          workshopName: 'Taller que falla', ownerName: 'Persona que falla', email: 'falla@example.invalid', password: PASSWORD,
-        });
+        const failed = await new Browser(api).post('/auth/registration/complete', { token: failingToken, password: PASSWORD });
         assert.equal(failed.status, 500);
         assert.deepEqual(failed.body, { statusCode: 500, message: 'Internal server error' }, 'sin detalles internos');
       } finally {
-        await prisma.$executeRawUnsafe('DROP TRIGGER falla_prueba ON verificacion_email');
+        await prisma.$executeRawUnsafe('DROP TRIGGER falla_prueba ON pertenencia');
         await prisma.$executeRawUnsafe('DROP FUNCTION falla_prueba()');
       }
       assert.equal(await prisma.workshop.count({ where: { name: 'Taller que falla' } }), 0);
       assert.equal(await prisma.user.count({ where: { email: 'falla@example.invalid' } }), 0);
+      assert.equal((await prisma.pendingRegistration.findFirstOrThrow({ where: { email: 'falla@example.invalid' } })).usedAt, null);
       assert.equal(await prisma.workshop.count(), 1);
     });
 
-    await t.test('AUTH-02: verificación obligatoria, errores genéricos, cookie protegida y cierre de sesión', async () => {
-      const pending = new Browser(api);
-      await pending.post('/auth/register', { workshopName: 'Taller sin verificar', ownerName: 'Persona', email: 'pendiente@example.invalid', password: PASSWORD });
-      const firstLink = tokenFrom(api.outbox.at(-1));
-      const unverified = await pending.post('/auth/login', { email: 'pendiente@example.invalid', password: PASSWORD });
-      assert.equal(unverified.status, 403);
-      assert.equal(unverified.body.code, 'EMAIL_NOT_VERIFIED');
-      assert.equal((await pending.post('/auth/resend-verification', { email: 'pendiente@example.invalid' })).status, 202);
-      const secondLink = tokenFrom(api.outbox.at(-1));
-      assert.equal((await pending.post('/auth/verify-email', { token: firstLink })).status, 400, 'el enlace anterior queda inutilizable');
-      assert.equal((await pending.post('/auth/verify-email', { token: secondLink })).status, 200);
-      assert.equal((await pending.post('/auth/verify-email', { token: secondLink })).status, 400, 'un solo uso');
-      assert.equal((await pending.post('/auth/resend-verification', { email: 'nadie@example.invalid' })).status, 202);
+    await t.test('AUTH-01: un tercero no puede fijar la contraseña de un email ajeno', async () => {
+      // Caso reportado en la revisión: el intruso registra primero el email del titular.
+      const intruder = new Browser(api);
+      const intruderLink = await register(api, intruder, { workshopName: 'Taller intruso', ownerName: 'Intruso', email: 'titular@example.invalid' });
+      assert.equal(api.outbox.at(-1).to, 'titular@example.invalid', 'el enlace llega solo al buzón del titular');
+      assert.equal(await prisma.user.count({ where: { email: 'titular@example.invalid' } }), 0, 'registrarse no crea la cuenta');
+      assert.equal((await intruder.post('/auth/login', { email: 'titular@example.invalid', password: PASSWORD })).status, 401);
 
+      const owner = new Browser(api);
+      const ownLink = await register(api, owner, { workshopName: 'Taller del titular', ownerName: 'Titular', email: 'titular@example.invalid' });
+      const preview = await owner.post('/auth/registration/preview', { token: ownLink });
+      assert.equal(preview.body.workshopName, 'Taller del titular');
+      assert.equal((await owner.post('/auth/registration/complete', { token: ownLink, password: 'contraseña elegida por el titular' })).status, 201);
+      assert.equal((await owner.post('/auth/registration/complete', { token: ownLink, password: PASSWORD })).status, 400, 'un solo uso');
+      assert.equal((await owner.post('/auth/registration/complete', { token: intruderLink, password: PASSWORD })).status, 400,
+        'completar un registro anula las demás solicitudes del email');
+      const login = await owner.post('/auth/login', { email: 'titular@example.invalid', password: 'contraseña elegida por el titular' });
+      assert.equal(login.status, 200);
+      assert.equal(login.body.workshop.name, 'Taller del titular');
+      assert.equal(await prisma.workshop.count({ where: { name: 'Taller intruso' } }), 0);
+    });
+
+    await t.test('AUTH-01: reenviar no anula enlaces y hay un límite de emails por destinatario', async () => {
+      const browser = new Browser(api);
+      const first = await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      const mails = api.outbox.length;
+      const fourth = await browser.post('/auth/register', { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      assert.equal(fourth.status, 202, 'misma respuesta');
+      assert.equal(api.outbox.length, mails, 'no envía más de 3 por hora al mismo destinatario');
+      assert.equal((await browser.post('/auth/registration/preview', { token: first })).status, 200, 'el primer enlace sigue vigente');
+      assert.equal((await browser.post('/auth/registration/complete', { token: first, password: PASSWORD })).status, 201);
+    });
+
+    await t.test('AUTH-02: errores genéricos, cookie protegida y cierre de sesión', async () => {
       const wrong = await new Browser(api).post('/auth/login', { email: 'duena.norte@example.invalid', password: 'contraseña equivocada' });
       const unknown = await new Browser(api).post('/auth/login', { email: 'nadie@example.invalid', password: 'contraseña equivocada' });
       assert.equal(wrong.status, 401);
@@ -184,9 +211,9 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
     await t.test('sesiones vencidas por inactividad o máximo absoluto se rechazan', async () => {
       for (const field of ['idleExpiresAt', 'expiresAt']) {
         const browser = new Browser(api);
-        await browser.post('/auth/login', { email: 'pendiente@example.invalid', password: PASSWORD });
+        await browser.post('/auth/login', { email: 'limite@example.invalid', password: PASSWORD });
         const session = await prisma.session.findFirstOrThrow({
-          where: { revokedAt: null, user: { email: 'pendiente@example.invalid' } }, orderBy: { createdAt: 'desc' },
+          where: { revokedAt: null, user: { email: 'limite@example.invalid' } }, orderBy: { createdAt: 'desc' },
         });
         const now = Date.now();
         // El vencimiento debe quedar en el pasado y respetar expira_at > created_at.

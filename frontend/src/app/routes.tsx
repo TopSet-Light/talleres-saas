@@ -3,7 +3,7 @@ import { App } from '../App';
 import { AcceptInvitationPage } from '../features/auth/pages/AcceptInvitationPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
 import { RegisterPage } from '../features/auth/pages/RegisterPage';
-import { VerifyEmailPage } from '../features/auth/pages/VerifyEmailPage';
+import { CompleteRegistrationPage } from '../features/auth/pages/CompleteRegistrationPage';
 import { RequireSession } from '../features/auth/RequireSession';
 import { useMe } from '../features/auth/session';
 import { EmployeesPage } from '../features/users/pages/EmployeesPage';
@@ -34,7 +34,8 @@ export const routes: RouteObject[] = [{
     { path: 'empleados', element: <RequireSession permission="employees.read"><EmployeesPage /></RequireSession> },
     { path: 'login', element: <LoginPage /> },
     { path: 'registro', element: <RegisterPage /> },
-    { path: 'verificar-email', element: <VerifyEmailPage /> },
+    // Destino del enlace del email de registro: allí se elige la contraseña.
+    { path: 'verificar-email', element: <CompleteRegistrationPage /> },
     { path: 'invitacion', element: <AcceptInvitationPage /> },
     // Control de salud de la primera entrega, ahora en su propia ruta pública.
     { path: 'estado', element: <App /> },

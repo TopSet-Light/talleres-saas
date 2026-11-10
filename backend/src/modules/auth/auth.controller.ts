@@ -6,7 +6,7 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../common/session-cooki
 import { Access, CurrentAccess } from './access';
 import { AccessGuard } from './access.guard';
 import { AuthService, toMe } from './auth.service';
-import { EmailField, LoginDto, RegisterDto, TokenDto } from './dto';
+import { CompleteRegistrationDto, LoginDto, RegisterDto, TokenDto } from './dto';
 import { SessionService } from './session.service';
 
 @Controller('auth')
@@ -22,23 +22,22 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   async register(@Body() dto: RegisterDto) {
     await this.auth.register(dto);
-    return { message: 'Si los datos son correctos, te enviamos un email para verificar la cuenta.' };
+    return { message: 'Si el email puede registrarse, te enviamos un enlace para elegir tu contraseña y terminar el registro.' };
   }
 
-  @Post('verify-email')
+  @Post('registration/preview')
   @HttpCode(200)
   @UseGuards(ThrottlerGuard)
-  async verifyEmail(@Body() dto: TokenDto) {
-    await this.auth.verifyEmail(dto.token);
-    return { message: 'Email verificado. Ya podés iniciar sesión.' };
+  previewRegistration(@Body() dto: TokenDto) {
+    return this.auth.previewRegistration(dto.token);
   }
 
-  @Post('resend-verification')
-  @HttpCode(202)
+  @Post('registration/complete')
+  @HttpCode(201)
   @UseGuards(ThrottlerGuard)
-  async resendVerification(@Body() dto: EmailField) {
-    await this.auth.resendVerification(dto.email);
-    return { message: 'Si la cuenta existe y falta verificarla, te enviamos un nuevo enlace.' };
+  async completeRegistration(@Body() dto: CompleteRegistrationDto) {
+    await this.auth.completeRegistration(dto);
+    return { message: 'Registro completo. Ya podés iniciar sesión.' };
   }
 
   @Post('login')

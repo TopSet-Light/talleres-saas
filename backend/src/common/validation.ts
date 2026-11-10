@@ -3,7 +3,9 @@ import { BadRequestException, ValidationError, ValidationPipe } from '@nestjs/co
 function collect(errors: ValidationError[], fields: Record<string, string>, prefix = '') {
   for (const error of errors) {
     const field = prefix + error.property;
-    const message = Object.values(error.constraints ?? {})[0];
+    const constraints = error.constraints ?? {};
+    // El mensaje de class-validator para campos no permitidos está en inglés.
+    const message = constraints.whitelistValidation ? 'Este campo no está permitido.' : Object.values(constraints)[0];
     if (message && !fields[field]) fields[field] = message;
     if (error.children?.length) collect(error.children, fields, `${field}.`);
   }
