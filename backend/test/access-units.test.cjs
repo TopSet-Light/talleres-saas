@@ -6,6 +6,7 @@ const { PasswordService } = require('../dist/modules/auth/password.service');
 const { loadConfig } = require('../dist/config/app-config');
 const { hashToken, newToken, TOKEN_PATTERN, normalizeEmail } = require('../dist/common/tokens');
 const { OriginMiddleware } = require('../dist/common/origin.middleware');
+const { smtpTransportOptions } = require('../dist/mail/mail.service');
 
 test('matriz de permisos: solo el dueño gestiona empleados y el mecánico no toca precios ni cobros', () => {
   for (const permission of ['employees.read', 'employees.invite', 'employees.changeRole', 'employees.deactivate']) {
@@ -46,6 +47,25 @@ test('configuración: valores locales por defecto, Secure con https y errores si
   assert.equal(loadConfig({ APP_URL: 'https://taller.example', COOKIE_SECURE: 'false' }).cookieSecure, false);
   assert.throws(() => loadConfig({ APP_URL: 'javascript:alert(1)' }), /APP_URL/);
   assert.throws(() => loadConfig({ SMTP_PORT: 'x' }), /SMTP_PORT/);
+});
+
+test('SMTP: Mailpit sin credenciales en local y proveedor real con autenticación y TLS', () => {
+  const local = smtpTransportOptions(loadConfig({}));
+  assert.equal(local.host, 'mailpit');
+  assert.equal(local.port, 1025);
+  assert.equal(local.secure, false);
+  assert.equal(local.auth, undefined);
+
+  const starttls = smtpTransportOptions(loadConfig({ SMTP_HOST: 'smtp.example', SMTP_PORT: '587', SMTP_USER: 'usuario', SMTP_PASSWORD: 'secreto-de-prueba' }));
+  assert.deepEqual(starttls.auth, { user: 'usuario', pass: 'secreto-de-prueba' });
+  assert.equal(starttls.secure, false);
+  assert.equal(starttls.requireTLS, true, 'no envía credenciales sin cifrar');
+
+  const implicit = smtpTransportOptions(loadConfig({ SMTP_HOST: 'smtp.example', SMTP_PORT: '465', SMTP_USER: 'usuario', SMTP_PASSWORD: 'secreto-de-prueba' }));
+  assert.equal(implicit.secure, true);
+
+  assert.throws(() => loadConfig({ SMTP_USER: 'usuario' }), error => /SMTP_USER y SMTP_PASSWORD/.test(error.message));
+  assert.throws(() => loadConfig({ SMTP_PASSWORD: 'secreto-de-prueba' }), error => !error.message.includes('secreto-de-prueba'));
 });
 
 test('tokens: 43 caracteres base64url, hash SHA-256 hexadecimal y emails normalizados', () => {

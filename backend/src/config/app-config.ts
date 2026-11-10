@@ -9,6 +9,11 @@ export interface AppConfig {
   cookieSecure: boolean;
   smtpHost: string;
   smtpPort: number;
+  /** TLS desde la conexión (puerto 465). Con `false` y credenciales, se exige STARTTLS. */
+  smtpSecure: boolean;
+  /** Credenciales del proveedor SMTP. Mailpit no las usa; en producción se inyectan por entorno. */
+  smtpUser?: string;
+  smtpPassword?: string;
   mailFrom: string;
   /** Peticiones por minuto y por IP en registro, login, invitaciones y verificación. */
   authRateLimit: number;
@@ -41,12 +46,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const cookieSecure = env.COOKIE_SECURE === undefined || env.COOKIE_SECURE === ''
     ? appOrigin.startsWith('https:')
     : env.COOKIE_SECURE === 'true';
+  const smtpPort = positiveInteger(env.SMTP_PORT, 1025, 'SMTP_PORT');
+  const smtpUser = env.SMTP_USER || undefined;
+  const smtpPassword = env.SMTP_PASSWORD || undefined;
+  // El mensaje nunca incluye los valores: la contraseña no debe llegar a logs.
+  if (Boolean(smtpUser) !== Boolean(smtpPassword)) throw new Error('SMTP_USER y SMTP_PASSWORD deben configurarse juntos');
   return {
     appUrl,
     appOrigin,
     cookieSecure,
     smtpHost: env.SMTP_HOST || 'mailpit',
-    smtpPort: positiveInteger(env.SMTP_PORT, 1025, 'SMTP_PORT'),
+    smtpPort,
+    smtpSecure: env.SMTP_SECURE === undefined || env.SMTP_SECURE === '' ? smtpPort === 465 : env.SMTP_SECURE === 'true',
+    smtpUser,
+    smtpPassword,
     mailFrom: env.MAIL_FROM || 'Gestión de talleres <no-responder@talleres.local>',
     authRateLimit: positiveInteger(env.AUTH_RATE_LIMIT, 10, 'AUTH_RATE_LIMIT'),
     trustProxyHops: integer(env.TRUST_PROXY_HOPS, 1, 'TRUST_PROXY_HOPS', 0),
