@@ -1,6 +1,7 @@
 const { spawnSync } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const path = require('node:path');
+const { readdirSync } = require('node:fs');
 
 const name = `talleres-point07-${randomBytes(6).toString('hex')}`;
 const password = randomBytes(24).toString('hex');
@@ -29,7 +30,10 @@ async function main() {
     const address = docker(['port', name, '5432/tcp']);
     if (!/^127\.0\.0\.1:\d+$/.test(address)) throw new Error('Puerto de prueba inesperado.');
     const databaseUrl = `postgresql://point07:${password}@${address}/point07_test`;
-    const result = spawnSync(process.execPath, ['--test', 'test/integration/data.test.cjs'], {
+    // Datos (punto 07) y acceso HTTP (punto 08), cada archivo en su propio esquema.
+    const files = readdirSync(path.resolve(__dirname, '../test/integration'))
+      .filter(file => file.endsWith('.test.cjs')).map(file => `test/integration/${file}`);
+    const result = spawnSync(process.execPath, ['--test', ...files], {
       cwd: path.resolve(__dirname, '..'), windowsHide: true, stdio: 'inherit',
       env: { ...process.env, POINT07_DISPOSABLE: '1', DATABASE_URL: databaseUrl },
     });

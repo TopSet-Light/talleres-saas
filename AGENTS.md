@@ -12,7 +12,7 @@ Antes de cambiar código, leer:
 
 ### Lectura del PDF y consumo de tokens
 
-- No abrir, extraer ni releer automáticamente `docs/requerimientos/Requerimientos-SaaS-Talleres (1).pdf` al iniciar una tarea o desarrollar un módulo.
+- No abrir, extraer ni releer automáticamente `docs/requeriments/Requerimientos-SaaS-Talleres (1).pdf` al iniciar una tarea o desarrollar un módulo.
 - Consultar el PDF únicamente cuando el usuario lo pida explícitamente y sea necesario para resolver la tarea. Una referencia a un módulo o ID de historia no implica por sí sola una solicitud de leer el PDF.
 - Usar primero las instrucciones del usuario, este archivo, la documentación Markdown y el código pertinente. Si falta un criterio imprescindible que solo está en el PDF, pedir al usuario ese criterio o que indique si quiere consultar el documento.
 - Cuando corresponda leerlo, limitar la extracción a las páginas o secciones necesarias y reutilizar la información ya disponible en la conversación. No cargar el documento completo por defecto.

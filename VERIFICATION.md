@@ -72,6 +72,40 @@ A solicitud del usuario se aplicaron las migraciones a la base local de Compose,
 - Consulta directa a PostgreSQL confirma `taller`, `usuario`, `pertenencia`, `cliente`, `vehiculo`, `titularidad_vehiculo` y `_prisma_migrations`; ambas migraciones tienen fecha de finalización. Las seis tablas de negocio tienen cero registros.
 - No se ejecutó el seed de demostración ni se implementó el punto 08. No se borraron datos ni se restableció la base.
 
+## Punto 08 · Acceso (TS-19) — 9 de noviembre de 2026
+
+Alcance: AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 según `docs/decisiones/0001-acceso.md`. Entorno: Windows 11, Node.js 22.23.4 (fnm), pnpm 10.26.2, Docker 29.8.2 y Compose 5.6.0. En este equipo hay un PostgreSQL de Windows en el puerto 5432, así que el clon usa un `docker-compose.override.yml` local, excluido de Git, que publica la base en `127.0.0.1:5433`.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Instalación reproducible | `CI=true pnpm install --frozen-lockfile` aprobado. Dependencias nuevas fijadas con versión exacta. |
+| Prisma | `prisma validate` aprobado con URL ficticia. El SQL de `202611090001_access` se generó con `prisma migrate diff` contra un PostgreSQL descartable y se completó a mano con checks, índice parcial y trigger. |
+| Tipos y compilación | `pnpm --filter frontend typecheck` y `pnpm build` aprobados. |
+| Pruebas sin base | `pnpm test`: frontend 20/20 (6 de salud existentes y 14 nuevas de registro, login, verificación, invitación, empleados, permisos y sesión vencida); backend 8/8 (2 de salud y 6 unitarias de permisos, intentos, configuración, tokens, Origin y Argon2id). |
+| Integración con PostgreSQL real | `pnpm --filter backend test:data`: 24/24 en un contenedor `postgres:17.11-bookworm` descartable con tmpfs. Incluye las 13 de datos del punto 07, actualizadas para esperar la tercera migración, y 11 de acceso HTTP con la API real: registro atómico con falla simulada por trigger, respuestas genéricas, verificación de un solo uso, cookie `HttpOnly`/`SameSite=Lax`/`Path=/api`, logout con control de Origin, sesiones vencidas, invitaciones usadas, revocadas, vencidas y reemplazadas, email de otro taller, permisos con el frontend manipulado, ids cruzados entre dos talleres (404 sin cambios), dueños concurrentes, baja con sesión abierta, reactivación y límites por IP y por email. Sin contenedores remanentes. |
+| Recorrido real en Docker | Proyecto descartable `talleres-e2e` (frontend, API, PostgreSQL y Mailpit): 21/21 comprobaciones por HTTP a través de Vite, leyendo los emails desde la API de Mailpit. Registro, email de verificación, login bloqueado antes de verificar, verificación, cookie sin `Secure` en http local, invitación por email, aceptación de un solo uso, 403 para Recepción en empleados, baja que corta la sesión abierta y bloquea el login, logout desde otro origen rechazado y SPA servida en rutas internas. Se eliminó con `down --volumes`. |
+| Base local de desarrollo | `db:migrate` aplicó `202611090001_access`; `db:status`: 3 migraciones, esquema al día. Tablas nuevas `credencial`, `sesion`, `verificacion_email` e `invitacion`, sin datos de prueba. Salud HTTP 200. |
+| Protección de `main` | Consultada por la API pública de GitHub: ruleset `main-protection` activo, con PR, 1 aprobación, CI `Quality` y rama actualizada obligatorios. |
+| Formato | `git diff --check` aprobado. |
+| Pendiente | No se revisaron las pantallas en un navegador ni el diseño responsive (Definition of Done 06): las pruebas del frontend usan jsdom y API simulada. CI remoto pendiente hasta el push. Las pruebas de integración siguen fuera del workflow de CI. Sin lint configurado. Falta elegir el proveedor de email para staging. |
+
+## Revisión del PR #4 (TS-19) — 10 de noviembre de 2026
+
+Correcciones pedidas por Ezequiel-Cagolo. Mismo entorno que la sección anterior.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Registro con contraseña elegida por un tercero (comentario 1) | Corregido: el formulario solo guarda una solicitud (`202611100001_pending_registration`) y la contraseña se elige al abrir el enlace. Prueba de integración: el intruso registra primero el email del titular y no puede entrar; el titular completa su propio enlace, entra a su taller y el enlace del intruso queda anulado. |
+| IP elegida por el cliente (comentario 2) | Corregido: Vite reemplaza `X-Forwarded-For` (`frontend/vite.proxy.ts`) y la API confía en `TRUST_PROXY_HOPS` proxies. Integración: con límite 3, cuatro logins con distinta primera entrada de `X-Forwarded-For` recibieron `401,401,401,429`. Pruebas unitarias del proxy (3). |
+| Reenvío que anulaba enlaces (comentario 3) | Corregido: registrarse de nuevo no anula enlaces y hay un máximo de 3 emails por hora por destinatario. Integración: el cuarto registro no envía email y el primer enlace sigue vigente. |
+| Logout fallido y `/auth/me` tardío (comentarios 4 y 5) | Corregido en `session.tsx` y `AppLayout.tsx`. Pruebas del frontend: un logout con error de red mantiene la sesión, muestra el error y el reintento funciona; un 401 del `/auth/me` inicial que llega después del login no lo pisa. La prueba detectó que el aviso global de 401 también debía ignorar pedidos anteriores, y se corrigió. |
+| Tipos de `@Transform` (comentarios 6 y 7) | Aplicados en `auth/dto.ts` y `users/dto.ts`. |
+| Comprobaciones del CI en local | `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` aprobados. `pnpm test`: frontend 26/26, backend 8/8. |
+| Integración con PostgreSQL real | `pnpm --filter backend test:data`: 26/26, con las cuatro migraciones. |
+| Recorrido real en Docker | Proyecto descartable `talleres-e2e`, eliminado con `down --volumes`: 11/12 comprobaciones aprobadas por HTTP a través de Vite y Mailpit, incluidos el intento del intruso y el límite por destinatario. La restante fue un error del script: esperaba el 429 en el pedido 11 de una serie de logins con `X-Forwarded-For` distinto, pero llegó en el 9 porque también se contaron los 2 logins previos de la misma IP. El 429 confirma que el encabezado falso no evade el límite. |
+| Base local de desarrollo | Sin migrar en esta revisión: el entorno local quedó apagado a pedido del usuario. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
+| Pendiente | Revisión visual en navegador y diseño según Figma (indicado por la revisión). Proveedor SMTP de producción con autenticación, `MAIL_FROM` de dominio verificado y `APP_URL` HTTPS (comentario 8). Pruebas de integración fuera del CI. Sin lint configurado. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.

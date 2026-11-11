@@ -4,7 +4,7 @@ Aplicación web para talleres mecánicos argentinos. La orden de trabajo reúne 
 
 ## Estado del proyecto
 
-Etapa inicial de desarrollo. Están implementados los puntos 04, 05 y 06 (estructura, aplicaciones base y entorno local) y el 07 (modelos, migraciones e integridad de datos). El punto 08 de acceso todavía no está implementado: no hay login ni endpoints de negocio.
+Etapa inicial de desarrollo. Están implementados los puntos 04, 05 y 06 (estructura, aplicaciones base y entorno local) el 07 (modelos, migraciones e integridad de datos) y el 08 (acceso: registro de talleres, sesiones, invitaciones, roles y bajas; TS-19). Todavía no hay endpoints de clientes, vehículos ni órdenes.
 
 Decisiones confirmadas: base compartida con aislamiento por taller, una sucursal por taller y ARS en el MVP; cada usuario tiene una sola pertenencia y cada taller puede tener varios usuarios. Las instrucciones de datos están en [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba).
 
@@ -35,22 +35,32 @@ Las versiones resueltas de todas las dependencias están en `pnpm-lock.yaml`. La
 
 ## Estructura
 
-El [mapa de estructura actual y propuesta](docs/estructura-del-proyecto.md) detalla dónde incorporar cada módulo de frontend, backend y base de datos. Las [instrucciones para Codex](AGENTS.md) describen las convenciones de trabajo. El backlog completo y sus criterios de aceptación están en el [PDF de requerimientos](<docs/requerimientos/Requerimientos-SaaS-Talleres (1).pdf>).
+El [mapa de estructura actual y propuesta](docs/estructura-del-proyecto.md) detalla dónde incorporar cada módulo de frontend, backend y base de datos. Las [instrucciones para Codex](AGENTS.md) describen las convenciones de trabajo y [docs/decisiones/](docs/decisiones/) registra las decisiones de arquitectura. El backlog completo y sus criterios de aceptación están en el [PDF de requerimientos](<docs/requeriments/Requerimientos-SaaS-Talleres (1).pdf>).
 
 ```text
 frontend/
   src/                    # React y pruebas de pantalla (*.test.tsx)
+    app/                  # Rutas y layout con la sesión
+    features/auth/        # Registro, login, verificación e invitación
+    features/users/       # Gestión de empleados e invitaciones
+    shared/               # Cliente HTTP, formato y componentes sin reglas de negocio
   Dockerfile              # Servidor Vite para desarrollo local
   vite.config.ts          # Proxy /api y recarga por polling
 backend/
   src/
-    database/             # Módulo Prisma, sin entidades de negocio
+    config/               # Configuración validada al iniciar
+    common/               # Validación, control de Origin, cookie y tokens
+    database/             # Módulo Prisma
     health/               # Módulo, controlador y servicio de salud
-  test/                   # Pruebas HTTP y de timeout (node:test)
-  prisma/schema.prisma    # Taller, usuario, pertenencia, cliente, vehículo y titularidad
+    mail/                 # Envío de emails por SMTP
+    modules/auth/         # Registro, verificación, sesiones, guardia y permisos
+    modules/users/        # Empleados e invitaciones
+  test/                   # Pruebas HTTP, de timeout y unitarias (node:test)
+  test/integration/       # Datos y acceso HTTP contra PostgreSQL real
+  prisma/schema.prisma    # Taller, usuarios, acceso, cliente, vehículo y titularidad
   prisma/migrations/      # Migraciones SQL versionadas y restricciones de integridad
   prisma/seed-demo.cjs     # Carga explícita de datos ficticios de dos talleres
-  scripts/test-data.cjs    # PostgreSQL descartable para pruebas de datos
+  scripts/test-data.cjs    # PostgreSQL descartable para pruebas de integración
   Dockerfile
 .dockerignore             # Ambos Dockerfiles compilan desde la raíz del monorepo
 docker-compose.yml
@@ -61,7 +71,7 @@ package.json
 README.md
 ```
 
-El código de las aplicaciones va en su `src/`; las migraciones están en `backend/prisma/migrations/`. El punto 07 impide relaciones cruzadas en la base; el aislamiento de operaciones HTTP se implementará con acceso y los módulos de negocio. No se ejecuta ninguna migración para comprobar `SELECT 1`. No se crea `infra/` sin archivos que lo justifiquen.
+El código de las aplicaciones va en su `src/`; las migraciones están en `backend/prisma/migrations/`. El punto 07 impide relaciones cruzadas en la base; desde el 08, la API resuelve taller y rol desde la sesión y cada módulo de negocio debe filtrar por ese taller. No se ejecuta ninguna migración para comprobar `SELECT 1`. No se crea `infra/` sin archivos que lo justifiquen.
 
 ## Arranque desde un clon limpio
 
@@ -90,11 +100,22 @@ Editar `.env` y reemplazar `POSTGRES_PASSWORD` por una contraseña local. Para e
 docker compose up --build
 ```
 
-Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`.
+En un clon nuevo o después de incorporar migraciones, aplicarlas antes de usar la aplicación: ver [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba). Sin ellas, la salud responde, pero el registro y el login fallan.
 
-La pantalla «Gestión de talleres» pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. El frontend y PostgreSQL publican sus puertos ligados a `127.0.0.1`, solo para acceso desde la máquina local; la API no publica puertos.
+Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`. Sin sesión, la aplicación muestra el login; el uso está en [Acceso y usuarios](#acceso-y-usuarios). Los emails de registro e invitación llegan a Mailpit, en **http://localhost:8025** (`MAILPIT_PORT`).
 
-Para conectar Database Client de VS Code u otro cliente local a PostgreSQL, usar host `127.0.0.1`, puerto `5432`, SSL desactivado y los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` del `.env` como usuario, contraseña y base. El ejemplo usa `talleres` para usuario y base. La API conserva su conexión interna a `postgres:5432`. Después de agregar o cambiar la publicación del puerto, aplicar con `docker compose up -d postgres`; se conserva el volumen de datos. El puerto local `5432` debe estar libre.
+La pantalla de salud está en **http://localhost:5173/estado**: pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. El frontend, PostgreSQL y la interfaz de Mailpit publican sus puertos ligados a `127.0.0.1`, solo para acceso desde la máquina local; la API y el SMTP de Mailpit no publican puertos.
+
+Para conectar Database Client de VS Code u otro cliente local a PostgreSQL, usar host `127.0.0.1`, puerto `5432`, SSL desactivado y los valores `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB` del `.env` como usuario, contraseña y base. El ejemplo usa `talleres` para usuario y base. La API conserva su conexión interna a `postgres:5432`. Después de agregar o cambiar la publicación del puerto, aplicar con `docker compose up -d postgres`; se conserva el volumen de datos. El puerto local `5432` debe estar libre. Si la máquina ya tiene otro PostgreSQL en ese puerto, crear un `docker-compose.override.yml` local (Compose lo aplica solo) y excluirlo de Git con `.git/info/exclude`:
+
+```yaml
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"
+```
+
+En ese caso el cliente usa el puerto `5433`; la API sigue usando `postgres:5432`.
 
 Consulta de salud, válida en PowerShell y macOS/Linux:
 
@@ -114,7 +135,7 @@ Responde HTTP 200 después de ejecutar `SELECT 1` con Prisma. Si la consulta fal
 
 ```sh
 docker compose ps
-docker compose logs -f frontend api postgres
+docker compose logs -f frontend api postgres mailpit
 docker compose exec frontend pnpm typecheck
 docker compose exec frontend pnpm build
 docker compose exec frontend pnpm test
@@ -136,11 +157,11 @@ pnpm test
 
 ## Migraciones y datos de prueba
 
-El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. Todavía no hay credenciales, sesiones ni validación de permisos HTTP.
+El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. El punto 08 agrega credenciales, sesiones, solicitudes de registro e invitaciones; ver [Acceso y usuarios](#acceso-y-usuarios).
 
-Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se completará en el punto 08; no hay RLS implementado.
+Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se aplica en la API desde el punto 08; no hay RLS implementado.
 
-Las dos migraciones versionadas crean la estructura y agregan las restricciones e historial, conservando los datos de la primera versión. Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
+Las migraciones versionadas son cuatro: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes, y `202611100001_pending_registration` reemplaza la verificación de email por solicitudes de registro pendientes (elimina `verificacion_email`, que solo existió en la rama TS-19). Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
 
 Desde la raíz, con la configuración local preparada:
 
@@ -158,17 +179,47 @@ La migración no se ejecuta automáticamente al iniciar ni al consultar salud. O
 docker compose run --rm --no-deps api pnpm db:seed:demo
 ```
 
-El seed crea dos talleres, cuatro usuarios con los tres roles representados, pertenencias, un cliente y un vehículo por taller. No contiene contraseñas ni habilita login. Es repetible y no restablece datos existentes. Usarlo únicamente en desarrollo o demostración; no se ejecuta automáticamente.
+El seed crea dos talleres, cuatro usuarios con los tres roles representados, pertenencias, un cliente y un vehículo por taller. No contiene contraseñas: esos usuarios no pueden iniciar sesión. Para probar el acceso, registrar un taller desde la aplicación. Es repetible y no restablece datos existentes. Usarlo únicamente en desarrollo o demostración; no se ejecuta automáticamente.
 
 Con herramientas locales, configurar `DATABASE_URL` en el entorno del backend y usar `pnpm --filter backend generate`, `pnpm --filter backend db:migrate`, `pnpm --filter backend db:status` y, opcionalmente, `pnpm --filter backend db:seed:demo`. Estos comandos no cargan automáticamente el `.env` de Compose desde la raíz. No imprimir ni compartir la URL.
 
-Para probar datos y migraciones con dependencias locales instaladas y Docker disponible:
+Para probar datos, migraciones y acceso HTTP con dependencias locales instaladas y Docker disponible:
 
 ```bash
 pnpm --filter backend test:data
 ```
 
-El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Prueba instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
+El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Compila el backend y ejecuta los archivos de `backend/test/integration/`, cada uno en su propio esquema. Los datos prueban instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. El acceso levanta la API real contra esa base, con los emails capturados en memoria: registro en dos pasos (incluido el intento de apropiarse de un email ajeno), sesiones, invitaciones, permisos, accesos cruzados entre dos talleres, bajas y límites de intentos, también con `X-Forwarded-For` falso. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
+
+## Acceso y usuarios
+
+Implementa AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 (TS-19). Las decisiones, la matriz de permisos y sus motivos están en [docs/decisiones/0001-acceso.md](docs/decisiones/0001-acceso.md). Quedan fuera la recuperación de contraseña (AUTH-05) y los datos comerciales (AUTH-07).
+
+Recorrido local:
+
+1. En **/registro**, cargar el nombre del taller, el del dueño/administrador y el email. No se pide contraseña ni se crea la cuenta todavía.
+2. Abrir el email en Mailpit (**http://localhost:8025**) y seguir el enlace. Ahí se elige la contraseña (12 a 128 caracteres) y recién entonces se crean el taller y la cuenta. El enlace vence a las 24 horas; registrarse de nuevo envía otro sin anular los anteriores, hasta 3 por hora por email.
+3. Iniciar sesión en **/login**. En **/empleados**, el dueño invita por email con un rol, cambia roles, desactiva y reactiva accesos y revoca invitaciones pendientes.
+4. La persona invitada abre el enlace del email (**/invitacion**), elige nombre y contraseña, e inicia sesión.
+
+| Ruta de la API | Acceso |
+| --- | --- |
+| `POST /api/auth/register`, `/registration/preview`, `/registration/complete`, `/login` | Públicas, con límite por IP |
+| `POST /api/auth/logout`, `GET /api/auth/me` | Sesión |
+| `GET /api/employees`, `PATCH /api/employees/:id` | Dueño/Administrador |
+| `GET` y `POST /api/invitations`, `DELETE /api/invitations/:id` | Dueño/Administrador |
+| `POST /api/invitations/preview`, `/accept` | Públicas, con el token de la invitación y límite por IP |
+
+Reglas principales:
+
+- La sesión viaja en la cookie `taller_sesion` (`httpOnly`, `SameSite=Lax`, `Path=/api`). Vence a las 12 horas sin uso o a los 7 días; en la base se guarda solo el hash del token.
+- Cada pedido comprueba la sesión y que la pertenencia siga activa: una baja corta el acceso en la operación siguiente y revoca las sesiones abiertas.
+- Taller y rol salen siempre de la sesión o de la invitación guardada. Un id de otro taller responde 404 y los campos no previstos se rechazan con 400.
+- Las operaciones de cambio con un `Origin` distinto de `APP_URL` se rechazan con 403. Por eso la aplicación debe abrirse en la URL de `APP_URL` (en local, `http://localhost:5173`, no `127.0.0.1`).
+- El formulario de registro solo guarda una solicitud y envía el enlace: la contraseña la elige quien controla el buzón, así nadie puede apropiarse de un email ajeno. Completar un registro anula las demás solicitudes de ese email.
+- Las rutas públicas de registro, login e invitaciones admiten 10 pedidos por minuto por IP (`AUTH_RATE_LIMIT`). La IP sale de la última entrada de `X-Forwarded-For`, que agrega el proxy: la API confía en `TRUST_PROXY_HOPS` proxies (1 por defecto) y Vite reemplaza el encabezado que envía el cliente. En producción, el proxy del servidor también debe reemplazarlo. El login además se bloquea 15 minutos tras 5 intentos fallidos para un email. Los contadores viven en memoria y se reinician con la API.
+- Las contraseñas se guardan con Argon2id (`hash-wasm`, sin binarios nativos). Los mensajes de error no revelan si un email existe ni si pertenece a otro taller.
+- Limitación del MVP: la pertenencia única incluye las inactivas, así que un empleado dado de baja no puede sumarse a otro taller con el mismo email.
 
 ## CI y pull requests en GitHub
 
@@ -185,7 +236,7 @@ docker compose stop postgres
 curl -i http://localhost:5173/api/health
 ```
 
-Esperar HTTP 503 y el JSON de indisponibilidad. Recargar la pantalla: debe mostrar «Servicio no disponible» y el JSON. Luego:
+Esperar HTTP 503 y el JSON de indisponibilidad. Recargar **/estado**: debe mostrar «Servicio no disponible» y el JSON. Luego:
 
 ```sh
 docker compose start postgres
@@ -239,7 +290,9 @@ En el entorno descartable usar `docker compose -p talleres-persistencia down --v
 
 ## Configuración y secretos
 
-`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
+`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS`, `COOKIE_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` y `SMTP_SECURE`. Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente.
+
+**Email en producción.** Mailpit es solo para desarrollo: captura los emails y no los entrega. Antes de desplegar hay que elegir un proveedor SMTP real (todavía no elegido) y configurar en el entorno del servidor `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`; `MAIL_FROM` con un remitente de un dominio verificado (SPF y DKIM), y `APP_URL` con la URL pública HTTPS para que los enlaces de registro e invitación apunten al entorno correcto. Con credenciales, la API exige TLS: puerto 465, o STARTTLS en 587. `SMTP_USER` y `SMTP_PASSWORD` van juntas o la API no arranca. Las credenciales son secretos: no van en Git ni en las imágenes. La lista completa está comentada en `.env.example`. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
 
 ## Verificaciones de esta entrega
 

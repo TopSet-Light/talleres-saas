@@ -18,9 +18,21 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?Completar POSTGRES_USER}:${POSTGRES_PASSWORD:?Completar POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Completar POSTGRES_DB}?schema=public&connect_timeout=2&pool_timeout=2&socket_timeout=2&connection_limit=3
+      # URL que usa el navegador: arma los enlaces de los emails y valida el Origin.
+      APP_URL: http://localhost:${FRONTEND_PORT:-5173}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  # Buzón local: captura los emails sin enviarlos. Interfaz en http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
 
   postgres:
     image: postgres:17.11-bookworm
