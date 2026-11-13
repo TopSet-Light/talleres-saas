@@ -19,6 +19,7 @@ const first = '202611050001_initial_data';
 const second = '202611050002_data_integrity';
 const third = '202611090001_access';
 const fourth = '202611100001_pending_registration';
+const fifth = '202611130001_recovery_settings_google';
 function urlFor(schema) {
   const url = new URL(baseUrl);
   url.searchParams.set('schema', schema);
@@ -49,7 +50,7 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       deploy('empty_install');
       assert.equal(await prisma.workshop.count(), 0);
       const migrations = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`;
-      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth]);
+      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth, fifth]);
     });
 
     await t.test('actualización de la primera migración conserva registros y agrega reglas e historial', async () => {
@@ -69,6 +70,10 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       assert.equal(await upgrade.vehicle.count(), 2);
       assert.equal((await upgrade.vehicle.findUniqueOrThrow({ where: { id: ids.vehicleA } })).plate, 'AB123CD');
       assert.equal(await upgrade.vehicleOwnership.count(), 2);
+      // TS-20: los talleres existentes reciben configuración y numeración iniciales.
+      assert.equal(await upgrade.workshopSettings.count(), 2);
+      assert.deepEqual((await upgrade.documentNumbering.findMany({ where: { workshopId: ids.workshopA }, orderBy: { kind: 'asc' } }))
+        .map(n => [n.kind, n.prefix, n.next]), [['WORK_ORDER', 'OT-', 1], ['ESTIMATE', 'PRE-', 1]]);
       await rejects(upgrade.vehicle.create({ data: vehicle({ plate: 'ab 123-cd' }) }));
       await rejects(upgrade.vehicle.create({ data: vehicle({ customerId: ids.customerB }) }));
     });
