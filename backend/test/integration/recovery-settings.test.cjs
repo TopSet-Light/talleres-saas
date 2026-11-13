@@ -125,6 +125,18 @@ test('TS-20 · AUTH-07: configuración del taller, logo privado y numeración en
       assert.deepEqual(settings.body.numbering, { workOrder: { prefix: 'OT-', next: 1 }, estimate: { prefix: 'PRE-', next: 1 } });
     });
 
+    await t.test('los datos opcionales del registro (TS-21) quedan en la configuración', async () => {
+      const { browser } = await registerOwner(api, {
+        workshopName: 'Taller con datos', ownerName: 'Persona', email: 'datos@example.invalid',
+        extra: { contactPhone: ' 351 555-0199 ', locality: 'Villa María', address: 'San Martín 100' },
+      });
+      const settings = (await browser.get('/workshop-settings')).body;
+      assert.deepEqual([settings.contactPhone, settings.locality, settings.address], ['351 555-0199', 'Villa María', 'San Martín 100']);
+      const tooLong = await new Browser(api).post('/auth/register', { workshopName: 'Taller', ownerName: 'Persona', email: 'largo@example.invalid', address: 'x'.repeat(301) });
+      assert.equal(tooLong.status, 400);
+      assert.ok(tooLong.body.fields.address);
+    });
+
     await t.test('el dueño guarda y vuelve a consultar la configuración', async () => {
       const saved = await ownerA.put('/workshop-settings', validSettings());
       assert.equal(saved.status, 200);

@@ -77,6 +77,7 @@ export class AuthService {
       await tx.pendingRegistration.create({
         data: {
           email: dto.email, workshopName: dto.workshopName, ownerName: dto.ownerName,
+          contactPhone: dto.contactPhone ?? null, locality: dto.locality ?? null, address: dto.address ?? null,
           tokenHash: hashToken(token), createdAt: now, expiresAt: new Date(now.getTime() + REGISTRATION_TTL_MS),
         },
       });
