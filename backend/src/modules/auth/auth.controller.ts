@@ -6,7 +6,8 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../common/session-cooki
 import { Access, CurrentAccess } from './access';
 import { AccessGuard } from './access.guard';
 import { AuthService, toMe } from './auth.service';
-import { CompleteRegistrationDto, LoginDto, RegisterDto, TokenDto } from './dto';
+import { CompleteRegistrationDto, EmailField, LoginDto, RegisterDto, ResetPasswordDto, TokenDto } from './dto';
+import { PasswordResetService } from './password-reset.service';
 import { SessionService } from './session.service';
 
 @Controller('auth')
@@ -14,6 +15,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
+    private readonly passwordReset: PasswordResetService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -38,6 +40,30 @@ export class AuthController {
   async completeRegistration(@Body() dto: CompleteRegistrationDto) {
     await this.auth.completeRegistration(dto);
     return { message: 'Registro completo. Ya podés iniciar sesión.' };
+  }
+
+  // AUTH-05. Misma respuesta para emails registrados y desconocidos.
+  @Post('password/forgot')
+  @HttpCode(202)
+  @UseGuards(ThrottlerGuard)
+  async forgotPassword(@Body() dto: EmailField) {
+    await this.passwordReset.request(dto.email);
+    return { message: 'Si el email tiene una cuenta, te enviamos un enlace para elegir una contraseña nueva.' };
+  }
+
+  @Post('password/reset/preview')
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  previewPasswordReset(@Body() dto: TokenDto) {
+    return this.passwordReset.preview(dto.token);
+  }
+
+  @Post('password/reset')
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.passwordReset.reset(dto.token, dto.password);
+    return { message: 'Contraseña actualizada. Se cerraron tus sesiones abiertas: iniciá sesión de nuevo.' };
   }
 
   @Post('login')

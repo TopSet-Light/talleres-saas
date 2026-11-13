@@ -38,6 +38,12 @@ export class TokenDto {
   token!: string;
 }
 
+export class ResetPasswordDto extends TokenDto {
+  @IsString({ message: PASSWORD })
+  @Length(PASSWORD_MIN, PASSWORD_MAX, { message: PASSWORD })
+  password!: string;
+}
+
 export class CompleteRegistrationDto extends TokenDto {
   @IsString({ message: PASSWORD })
   @Length(PASSWORD_MIN, PASSWORD_MAX, { message: PASSWORD })
