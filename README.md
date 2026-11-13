@@ -102,7 +102,7 @@ docker compose up --build
 
 En un clon nuevo o después de incorporar migraciones, aplicarlas antes de usar la aplicación: ver [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba). Sin ellas, la salud responde, pero el registro y el login fallan.
 
-Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`. Sin sesión, la aplicación muestra el login; el uso está en [Acceso y usuarios](#acceso-y-usuarios). Los emails de registro e invitación llegan a Mailpit, en **http://localhost:8025** (`MAILPIT_PORT`).
+Abrir **http://localhost:5173**. Si se cambió `FRONTEND_PORT`, usar ese puerto. La primera construcción descarga las imágenes y dependencias. Para ejecutar en segundo plano usar `docker compose up --build -d`. Sin sesión, la aplicación muestra el login; el uso está en [Acceso y usuarios](#acceso-y-usuarios). Los emails de registro, invitación y recuperación de contraseña llegan a Mailpit, en **http://localhost:8025** (`MAILPIT_PORT`).
 
 La pantalla de salud está en **http://localhost:5173/estado**: pasa de «Consultando…» a «Conexión correcta» y muestra la respuesta real. El navegador llama a `/api/health`; Vite reenvía a `http://api:3000`. `api` y `postgres` se resuelven dentro de Compose, no desde el navegador. El frontend, PostgreSQL y la interfaz de Mailpit publican sus puertos ligados a `127.0.0.1`, solo para acceso desde la máquina local; la API y el SMTP de Mailpit no publican puertos.
 
@@ -157,11 +157,11 @@ pnpm test
 
 ## Migraciones y datos de prueba
 
-El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. El punto 08 agrega credenciales, sesiones, solicitudes de registro e invitaciones; ver [Acceso y usuarios](#acceso-y-usuarios).
+El esquema inicial contiene taller, usuario, pertenencia con rol y estado, cliente, vehículo e historial de titularidad (base de TEC-01, TEC-03, TEC-04 y TEC-06). Los roles almacenados son Dueño/Administrador, Recepción y Mecánico. El punto 08 agrega credenciales, sesiones, solicitudes de registro e invitaciones; ver [Acceso y usuarios](#acceso-y-usuarios). TS-20 agrega recuperación de contraseña, identidad de Google, configuración comercial y numeración por taller; ver [Configuración del taller](#configuración-del-taller).
 
 Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se aplica en la API desde el punto 08; no hay RLS implementado.
 
-Las migraciones versionadas son cuatro: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes, y `202611100001_pending_registration` reemplaza la verificación de email por solicitudes de registro pendientes (elimina `verificacion_email`, que solo existió en la rama TS-19). Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
+Las migraciones versionadas son cinco: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes, y `202611100001_pending_registration` reemplaza la verificación de email por solicitudes de registro pendientes (elimina `verificacion_email`, que solo existió en la rama TS-19), y `202611130001_recovery_settings_google` agrega recuperación de contraseña, configuración comercial, numeración, identidad de Google y datos opcionales del registro, creando la configuración inicial de los talleres existentes. Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
 
 Desde la raíz, con la configuración local preparada:
 
@@ -209,6 +209,9 @@ Recorrido local:
 | `GET /api/employees`, `PATCH /api/employees/:id` | Dueño/Administrador |
 | `GET` y `POST /api/invitations`, `DELETE /api/invitations/:id` | Dueño/Administrador |
 | `POST /api/invitations/preview`, `/accept` | Públicas, con el token de la invitación y límite por IP |
+| `POST /api/auth/password/forgot`, `/password/reset/preview`, `/password/reset` | Públicas, con límite por IP (TS-20, AUTH-05) |
+| `GET /api/auth/options` | Pública: `{ "google": true \| false }` |
+| `GET /api/auth/google/start`, `/google/callback` | Navegación completa del navegador (no fetch), con límite por IP |
 
 Reglas principales:
 
@@ -220,6 +223,52 @@ Reglas principales:
 - Las rutas públicas de registro, login e invitaciones admiten 10 pedidos por minuto por IP (`AUTH_RATE_LIMIT`). La IP sale de la última entrada de `X-Forwarded-For`, que agrega el proxy: la API confía en `TRUST_PROXY_HOPS` proxies (1 por defecto) y Vite reemplaza el encabezado que envía el cliente. En producción, el proxy del servidor también debe reemplazarlo. El login además se bloquea 15 minutos tras 5 intentos fallidos para un email. Los contadores viven en memoria y se reinician con la API.
 - Las contraseñas se guardan con Argon2id (`hash-wasm`, sin binarios nativos). Los mensajes de error no revelan si un email existe ni si pertenece a otro taller.
 - Limitación del MVP: la pertenencia única incluye las inactivas, así que un empleado dado de baja no puede sumarse a otro taller con el mismo email.
+- El registro acepta además `contactPhone`, `locality` y `address` opcionales (formulario de TS-21), que pasan a la configuración del taller al completarlo.
+- **Recuperación de contraseña (AUTH-05):** `/password/forgot` responde igual para emails registrados y desconocidos y envía un enlace a `/restablecer-contrasena#token=…` que vence en una hora, es de un solo uso y se guarda como hash. Hay un máximo de 3 emails por hora por destinatario, reservado de forma atómica. Elegir la contraseña nueva revoca todas las sesiones, anula los demás enlaces y libera el bloqueo por intentos fallidos.
+- **Ingreso con Google:** solo para cuentas existentes. Exige email verificado por Google y una cuenta activa; no crea usuarios ni talleres. El inicio usa PKCE S256, `state` atado al navegador por la cookie `taller_google_state` y `nonce`. La primera vez vincula la cuenta de Google por email y después la reconoce por su identificador (`sub`). Si algo falla, redirige a `/login?google=<motivo>`, con motivo `invalid`, `cancelled`, `unverified`, `no-account`, `disabled`, `conflict` o `error`. Sin `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` queda deshabilitado.
+
+Para probar Google en local: en Google Cloud Console, crear un cliente OAuth de tipo «Aplicación web» con la URI de redirección `http://localhost:5173/api/auth/google/callback`, cargar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env` y reconstruir con `docker compose up --build -d`. En producción, la URI es `{APP_URL}/api/auth/google/callback`. Las pruebas automáticas usan un Google simulado.
+
+## Configuración del taller
+
+AUTH-07 / CFG (TS-20). Un solo módulo para datos comerciales, logo y numeración; las decisiones están en [docs/decisiones/0002-recuperacion-configuracion-google.md](docs/decisiones/0002-recuperacion-configuracion-google.md).
+
+| Ruta de la API | Acceso |
+| --- | --- |
+| `GET /api/workshop-settings` | Dueño/Administrador (`settings.read`) |
+| `PUT /api/workshop-settings` | Dueño/Administrador (`settings.manage`) |
+| `PUT /api/workshop-settings/logo`, `DELETE /api/workshop-settings/logo` | Dueño/Administrador (`settings.manage`) |
+| `GET /api/workshop-settings/logo` | Cualquier integrante activo del taller |
+
+Contrato de `GET` y `PUT /api/workshop-settings`. El `PUT` reemplaza todo y recibe los mismos campos, salvo `logo` y `updatedAt`:
+
+```json
+{
+  "workshopName": "Taller Horizonte",
+  "taxId": "20123456786",
+  "address": "Av. Siempre Viva 742",
+  "locality": "Córdoba",
+  "contactPhone": "351 555-0101",
+  "contactEmail": "contacto@horizonte.example",
+  "documentFooter": "Texto para presupuestos y comprobantes",
+  "quoteValidityDays": 15,
+  "defaultTerms": "Condiciones comerciales predeterminadas",
+  "numbering": { "workOrder": { "prefix": "OT-", "next": 42 }, "estimate": { "prefix": "PRE-", "next": 18 } },
+  "logo": { "contentType": "image/png", "size": 20480, "updatedAt": "…", "url": "/api/workshop-settings/logo" },
+  "updatedAt": "…"
+}
+```
+
+- El taller sale siempre de la sesión: no hay ids de taller en rutas ni cuerpos. Un campo extra como `workshopId` se rechaza con 400.
+- `workshopName` es el nombre del taller (el que devuelve `/api/auth/me`).
+- `taxId` acepta `20-12345678-6` o solo dígitos, se guarda con 11 dígitos y valida el dígito verificador.
+- Los textos vacíos se guardan como `null`. `quoteValidityDays` va de 1 a 365.
+- Los prefijos admiten hasta 10 letras mayúsculas, números o guiones.
+- `next` no puede ser menor que el valor actual, para no repetir números. Los errores llegan por campo, por ejemplo `numbering.workOrder.next`.
+- **Numeración:** los correlativos son por taller y por tipo. Los futuros módulos de órdenes y presupuestos los asignan con `NumberingService.allocate` dentro de la transacción del alta: un `UPDATE` atómico que no repite números entre altas simultáneas y no consume número si la transacción se revierte. El formato visible es prefijo más al menos 4 dígitos, por ejemplo `OT-0042`.
+- **Logo:** se sube como `multipart/form-data` en el campo `logo`. Acepta PNG, JPEG o WebP de hasta 2 MB, validados por el contenido del archivo y no por el nombre (SVG se rechaza). Más grande responde 413 con `code: FILE_TOO_LARGE`. Se guarda en el volumen privado `workshop_files` (`FILES_DIR`), nunca como archivo estático: la API lo entrega con `Cache-Control: private, no-store` y `X-Content-Type-Options: nosniff`, y un taller no puede leer el de otro. Reemplazarlo o borrarlo elimina el archivo anterior. El volumen debe respaldarse junto con la base de datos.
+
+## CI y pull requests en GitHub
 
 ## CI y pull requests en GitHub
 
@@ -290,7 +339,7 @@ En el entorno descartable usar `docker compose -p talleres-persistencia down --v
 
 ## Configuración y secretos
 
-`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS`, `COOKIE_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` y `SMTP_SECURE`. Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente.
+`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS`, `COOKIE_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, `FILES_DIR`, `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (los dos de Google van juntos o la API no arranca). Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente.
 
 **Email en producción.** Mailpit es solo para desarrollo: captura los emails y no los entrega. Antes de desplegar hay que elegir un proveedor SMTP real (todavía no elegido) y configurar en el entorno del servidor `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`; `MAIL_FROM` con un remitente de un dominio verificado (SPF y DKIM), y `APP_URL` con la URL pública HTTPS para que los enlaces de registro e invitación apunten al entorno correcto. Con credenciales, la API exige TLS: puerto 465, o STARTTLS en 587. `SMTP_USER` y `SMTP_PASSWORD` van juntas o la API no arranca. Las credenciales son secretos: no van en Git ni en las imágenes. La lista completa está comentada en `.env.example`. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
 

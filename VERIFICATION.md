@@ -106,6 +106,19 @@ Correcciones pedidas por Ezequiel-Cagolo. Mismo entorno que la sección anterior
 | Base local de desarrollo | Sin migrar en esta revisión: el entorno local quedó apagado a pedido del usuario. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
 | Pendiente | Revisión visual en navegador y diseño según Figma (indicado por la revisión). Proveedor SMTP de producción con autenticación, `MAIL_FROM` de dominio verificado y `APP_URL` HTTPS (comentario 8). Pruebas de integración fuera del CI. Sin lint configurado. |
 
+## TS-20 · Recuperación, configuración del taller y Google — 13 de noviembre de 2026
+
+Alcance: AUTH-05, AUTH-07/CFG, ingreso con Google para cuentas existentes, datos opcionales del registro (TS-21) y corrección del límite de emails de TS-19. Decisiones en `docs/decisiones/0002-recuperacion-configuracion-google.md`. Mismo entorno que las secciones anteriores.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Corrección de TS-19 | Prueba de integración con 10 registros simultáneos al mismo email. Contra el código anterior falló: 4 emails en lugar de 3. Con la reserva atómica (`pg_advisory_xact_lock`) pasa: exactamente 3. |
+| Comprobaciones del CI en local | `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` y `git diff --check` aprobados. `pnpm test`: frontend 26/26, backend 13/13 (incluye CUIT, firma del logo, numeración, rutas del almacenamiento y configuración de Google). |
+| Integración con PostgreSQL real | `pnpm --filter backend test:data`: 50/50, en tres archivos con esquemas propios. **Migración:** instalación vacía y actualización desde la versión anterior, con configuración y numeración iniciales para los talleres existentes. **AUTH-05:** misma respuesta para emails registrados y desconocidos; la contraseña y las sesiones anteriores dejan de funcionar; enlaces usados, vencidos e inválidos rechazados; los demás enlaces anulados; límite simultáneo; bloqueo por intentos liberado. **AUTH-07:** guardar y volver a consultar; validaciones por campo; la numeración no vuelve atrás; un campo `workshopId` se rechaza; Recepción recibe 403; otro taller no ve los datos ni el logo; logo validado por contenido (SVG disfrazado, más de 2 MB); el reemplazo borra el archivo anterior; 20 asignaciones simultáneas sin repetidos; una alta revertida no consume número. **Google (simulado):** PKCE S256, `state` atado al navegador y de un solo uso, `nonce`, vencimiento, email sin verificar, sin cuenta, baja, cancelación, error de Google, vinculación por `sub` y conflicto; deshabilitado sin credenciales. |
+| Recorrido real en Docker | Proyecto descartable `talleres-e2e`, eliminado con `down --volumes`: 19/19 comprobaciones por HTTP a través de Vite. Registro con los campos de TS-21; configuración guardada y consultada; logo subido por el proxy, guardado en el volumen `workshop_files` y negado sin sesión; recuperación con el email real de Mailpit, con la sesión y la contraseña anteriores invalidadas; 10 registros simultáneos con exactamente 3 emails; Google deshabilitado sin credenciales. |
+| Base local de desarrollo | Sin migrar: el entorno local queda apagado. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
+| Pendiente | **Google:** probar con un cliente OAuth real (sin credenciales todavía). **TS-21:** conectar el frontend (recuperación, configuración, `/auth/options`, `/login?google=…` y subida del logo); TS-20 no modifica pantallas. **Volumen de archivos:** incluir en los backups. **Limpieza:** de intentos y enlaces vencidos. **CI:** las pruebas de integración siguen fuera. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.
