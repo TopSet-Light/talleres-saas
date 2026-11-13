@@ -12,22 +12,35 @@ const registration = {
   workshopName: 'Taller ficticio Norte', ownerName: 'Dueña Norte', email: 'duena@example.invalid', expiresAt: '2026-11-11T12:00:00.000Z',
 };
 
+it('abre Más como pantalla y reserva el acceso a Configuración para el dueño', async () => {
+  mockApi({ 'GET /api/auth/me': () => json(200, { ...owner, role: 'RECEPTION', permissions: ['customers.read'] }) });
+  const router = renderAt('/');
+  fireEvent.click(await screen.findByRole('link', { name: 'Más' }));
+  expect(await screen.findByRole('heading', { name: 'Más' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/mas');
+  expect(screen.getByRole('link', { name: 'Más' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByText('Configuración').closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.queryByRole('link', { name: /Configuración/ })).not.toBeInTheDocument();
+});
+
 it('sin sesión redirige al login', async () => {
   mockApi({ 'GET /api/auth/me': anonymous });
   const router = renderAt('/');
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/login');
 });
 
 it('inicia sesión y muestra el taller y el menú del dueño', async () => {
   const fetchMock = mockApi({ 'GET /api/auth/me': anonymous, 'POST /api/auth/login': () => json(200, owner) });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'contraseña de prueba');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
-  expect(await screen.findByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Empleados' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
+expect(screen.queryByRole('link', { name: 'Empleados' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Configuración' }));
+  expect(await screen.findByRole('link', { name: 'Equipo y accesos' })).toHaveAttribute('href', '/empleados');
   expect(calls(fetchMock, 'POST /api/auth/login')).toEqual([{ email: 'duena@example.invalid', password: 'contraseña de prueba' }]);
 });
 
@@ -37,10 +50,10 @@ it('muestra el error genérico del login', async () => {
     'POST /api/auth/login': () => json(401, { code: 'INVALID_CREDENTIALS', message: 'Email o contraseña incorrectos.' }),
   });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'x');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
   expect(await screen.findByText('Email o contraseña incorrectos.')).toBeInTheDocument();
 });
 
@@ -57,6 +70,10 @@ it('registro: pide solo los datos del taller, muestra errores de la API y luego 
   expect(screen.queryByLabelText(/Contraseña/)).not.toBeInTheDocument();
   fill('Nombre del taller', 'Taller ficticio');
   fill('Tu nombre', 'Persona');
+  fill('Teléfono de contacto', '+54 11 5555-0123');
+  fill('Ciudad o localidad', 'Buenos Aires');
+  fill('Dirección', 'Calle de prueba 123');
+  expect(screen.getByRole('button', { name: 'Continuar con Google' })).toBeDisabled();
   fill('Email', 'persona');
   fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
   expect(await screen.findByText('Ingresá un email válido.')).toBeInTheDocument();
@@ -64,10 +81,14 @@ it('registro: pide solo los datos del taller, muestra errores de la API y luego 
 
   fill('Email', 'persona@example.invalid');
   fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
-  expect(await screen.findByRole('heading', { name: 'Revisá tu email' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Revisá tu correo' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/register')[1]).toEqual({
     workshopName: 'Taller ficticio', ownerName: 'Persona', email: 'persona@example.invalid',
+    contactPhone: '+54 11 5555-0123', locality: 'Buenos Aires', address: 'Calle de prueba 123',
   });
+  fireEvent.click(screen.getByRole('button', { name: 'Reenviar email' }));
+  expect(calls(fetchMock, 'POST /api/auth/register')[2]).toEqual(calls(fetchMock, 'POST /api/auth/register')[1]);
+  expect(await screen.findByRole('button', { name: 'Reenviar email' })).toBeEnabled();
 });
 
 it('el enlace del email muestra el registro y permite elegir la contraseña', async () => {
@@ -153,7 +174,7 @@ it('cierra sesión y vuelve al login', async () => {
   const fetchMock = mockApi({ 'GET /api/auth/me': () => json(200, owner), 'POST /api/auth/logout': () => json(204) });
   renderAt('/');
   fireEvent.click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(1);
 });
 
@@ -166,10 +187,10 @@ it('si el cierre de sesión falla, lo informa, mantiene la sesión y permite rei
   renderAt('/');
   fireEvent.click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
   expect(await screen.findByText(/No se cerró la sesión/)).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(2);
 });
 
@@ -180,14 +201,14 @@ it('un 401 tardío del /auth/me inicial no pisa un login exitoso', async () => {
     'POST /api/auth/login': () => json(200, owner),
   });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'contraseña de prueba');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
-  expect(await screen.findByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
   // Recién ahora responden las consultas iniciales (StrictMode hace dos).
   for (const resolve of pendingMe) resolve(anonymous());
   await new Promise(resolve => setTimeout(resolve, 20));
-  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: 'Iniciar sesión' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Ingresá a tu taller' })).not.toBeInTheDocument();
 });

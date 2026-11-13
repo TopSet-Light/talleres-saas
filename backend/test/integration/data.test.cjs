@@ -19,6 +19,7 @@ const first = '202611050001_initial_data';
 const second = '202611050002_data_integrity';
 const third = '202611090001_access';
 const fourth = '202611100001_pending_registration';
+const fifth = '202611130001_registration_contact';
 function urlFor(schema) {
   const url = new URL(baseUrl);
   url.searchParams.set('schema', schema);
@@ -49,7 +50,7 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       deploy('empty_install');
       assert.equal(await prisma.workshop.count(), 0);
       const migrations = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`;
-      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth]);
+      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth, fifth, '202611130002_registration_address']);
     });
 
     await t.test('actualización de la primera migración conserva registros y agrega reglas e historial', async () => {
@@ -65,6 +66,8 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       await upgrade.vehicle.update({ where: { id: ids.vehicleA }, data: { plate: ' ab-123 cd ' } });
       deploy('previous_version');
       assert.equal(await upgrade.workshop.count(), 2);
+      const legacy = await upgrade.workshop.findUniqueOrThrow({ where: { id: ids.workshopA } });
+      assert.deepEqual([legacy.contactPhone, legacy.legacyCountry, legacy.locality, legacy.address], [null, null, null, null]);
       assert.equal(await upgrade.user.count(), 4);
       assert.equal(await upgrade.vehicle.count(), 2);
       assert.equal((await upgrade.vehicle.findUniqueOrThrow({ where: { id: ids.vehicleA } })).plate, 'AB123CD');

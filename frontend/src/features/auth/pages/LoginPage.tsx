@@ -4,6 +4,8 @@ import { ApiError, toApiError } from '../../../shared/api/http';
 import { Alert } from '../../../shared/ui/Alert';
 import { Field } from '../../../shared/ui/Field';
 import { login } from '../api';
+import { AuthScreen } from '../AuthScreen';
+import googleIcon from '../assets/google.svg';
 import { useSession } from '../session';
 
 export function LoginPage() {
@@ -32,16 +34,23 @@ export function LoginPage() {
   }
 
   return (
-    <main className="page narrow">
-      <h1>Iniciar sesión</h1>
+    <AuthScreen title={error?.code === 'ACCESS_DISABLED' ? 'Cuenta desactivada' : 'Ingresá a tu taller'}
+      description="Accedé con tu email." badge="Acceso seguro">
+      {location.state?.expired && <Alert tone="info">Tu sesión venció. Iniciá sesión de nuevo.</Alert>}
       {error && <Alert tone="error">{error.message}</Alert>}
-      <form onSubmit={onSubmit} noValidate>
+      <form className="auth-form" onSubmit={onSubmit} noValidate>
+        <h2 className="form-section-title">Inicio de sesión</h2>
         <Field label="Email" name="email" type="email" autoComplete="email" required error={error?.fields.email} />
         <Field label="Contraseña" name="password" type="password" autoComplete="current-password" required error={error?.fields.password} />
-        <button type="submit" disabled={submitting}>{submitting ? 'Ingresando…' : 'Ingresar'}</button>
+        <button type="submit" disabled={submitting}>{submitting ? 'Ingresando…' : 'Iniciar sesión'}</button>
+        <div className="auth-divider" aria-hidden="true">o</div>
+        <button type="button" className="secondary google-button" disabled aria-describedby="google-availability">
+          <img src={googleIcon} width={18} height={18} alt="" /> Continuar con Google
+        </button>
+        <p className="field-hint" id="google-availability">El acceso con Google todavía no está disponible.</p>
       </form>
-      <p>¿Tu taller todavía no tiene cuenta? <Link to="/registro">Registrá tu taller</Link></p>
-      <p className="muted"><Link to="/estado">Estado del servicio</Link></p>
-    </main>
+      <Link className="button-link" to="/recuperar-contrasena">Olvidé mi contraseña</Link>
+      <div className="auth-actions">¿No tienes cuenta? <Link className="button-link" to="/registro">Registrar taller</Link></div>
+    </AuthScreen>
   );
 }

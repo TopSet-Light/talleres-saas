@@ -207,6 +207,12 @@ El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contrase�
 
 ## Acceso y usuarios
 
+La referencia de TS-21 es [Acceso y cuenta · escritorio](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=55-373) y [Cuenta, acceso y administración · móvil](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=31-303).
+
+El registro requiere nombre comercial, responsable, email, teléfono de contacto, ciudad o localidad y dirección del taller. Los datos de contacto se guardan al verificar el correo y elegir la contraseña. El reenvío vuelve a solicitar el registro con los mismos datos, sujeto al límite de la API. Los talleres y enlaces creados antes de esta migración conservan sus datos existentes.
+
+Las pantallas de recuperación (AUTH-05) y configuración comercial (AUTH-07) incluyen su estado pendiente de integración. La vista previa del logo es local. Google aparece deshabilitado en acceso y registro. El [primer frame de Inicio y recepción](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=10-21) sirve de referencia para el Inicio autenticado. Los indicadores y las prioridades esperan los datos de EP-08.
+
 Implementa AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 (TS-19). Las decisiones, la matriz de permisos y sus motivos están en [docs/decisiones/0001-acceso.md](docs/decisiones/0001-acceso.md). Quedan fuera la recuperación de contraseña (AUTH-05) y los datos comerciales (AUTH-07).
 
 Recorrido local:

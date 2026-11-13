@@ -4,7 +4,7 @@ import { getMe, logout as logoutRequest, Me } from './api';
 
 type SessionState =
   | { status: 'loading' }
-  | { status: 'anonymous' }
+  | { status: 'anonymous'; expired?: boolean }
   | { status: 'authenticated'; me: Me }
   | { status: 'error'; message: string };
 
@@ -45,7 +45,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Si la API rechaza la sesión vigente (venció o hubo una baja), se vuelve al login.
     setUnauthorizedHandler(startedIn => {
-      if (startedIn === currentSessionVersion()) apply({ status: 'anonymous' });
+      if (startedIn === currentSessionVersion()) {
+        nextSessionVersion();
+        setState(previous => ({ status: 'anonymous', expired: previous.status === 'authenticated' }));
+      }
     });
     void reload();
     return () => setUnauthorizedHandler(undefined);

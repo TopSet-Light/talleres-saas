@@ -6,6 +6,7 @@ import { Alert } from '../../../shared/ui/Alert';
 import { Field } from '../../../shared/ui/Field';
 import { completeRegistration, previewRegistration, RegistrationPreview } from '../api';
 import { PASSWORD_HINT } from './RegisterPage';
+import { AuthScreen } from '../AuthScreen';
 
 type State =
   | { kind: 'loading' }
@@ -51,8 +52,7 @@ export function CompleteRegistrationPage() {
   }
 
   return (
-    <main className="page narrow">
-      <h1>Completá tu registro</h1>
+    <AuthScreen title={state.kind === 'invalid' ? 'Enlace de registro no disponible' : 'Completá tu registro'} badge="Acceso al taller">
       {state.kind === 'loading' && <p aria-busy="true">Revisando el enlace…</p>}
       {state.kind === 'invalid' && (
         <>
@@ -78,7 +78,7 @@ export function CompleteRegistrationPage() {
               {error.code === 'ALREADY_REGISTERED' && <p><Link to="/login">Ir a iniciar sesión</Link></p>}
             </Alert>
           )}
-          <form onSubmit={onSubmit} noValidate>
+          <form className="auth-form" onSubmit={onSubmit} noValidate>
             <Field label="Elegí tu contraseña" name="password" type="password" autoComplete="new-password" required minLength={12} maxLength={128}
               hint={PASSWORD_HINT} error={error?.fields.password} />
             <Field label="Repetí la contraseña" name="passwordConfirm" type="password" autoComplete="new-password" required
@@ -87,6 +87,6 @@ export function CompleteRegistrationPage() {
           </form>
         </>
       )}
-    </main>
+    </AuthScreen>
   );
 }

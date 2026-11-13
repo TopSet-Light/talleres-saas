@@ -72,10 +72,11 @@ function tokenFrom(message) {
 }
 
 const PASSWORD = 'contraseña de prueba segura';
+const contact = { contactPhone: '+54 11 5555-0123', locality: 'Buenos Aires', address: 'Calle de prueba 123' };
 
 async function register(api, browser, { workshopName, ownerName, email }) {
   const before = api.outbox.length;
-  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email })).status, 202);
+  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email, ...contact })).status, 202);
   assert.equal(api.outbox.length, before + 1, 'envía el enlace al buzón');
   return tokenFrom(api.outbox.at(-1));
 }
@@ -113,11 +114,15 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal(me.role, 'OWNER');
       assert.equal(me.user.email, 'duena.norte@example.invalid');
       assert.equal(me.workshop.name, 'Taller ficticio Norte');
+      assert.deepEqual(await prisma.workshop.findUnique({
+        where: { id: me.workshop.id },
+        select: { contactPhone: true, locality: true, address: true },
+      }), contact);
       assert.ok(me.permissions.includes('employees.invite'));
 
       const mails = api.outbox.length;
       const repeated = await new Browser(api).post('/auth/register', {
-        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid',
+        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid', ...contact,
       });
       assert.equal(repeated.status, 202, 'misma respuesta que un registro nuevo');
       assert.equal(api.outbox.length, mails, 'un email ya registrado no recibe enlaces');
@@ -125,7 +130,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
 
       const invalid = await new Browser(api).post('/auth/register', { workshopName: 'X', ownerName: '', email: 'no-es-email', password: 'corta' });
       assert.equal(invalid.status, 400);
-      assert.deepEqual(Object.keys(invalid.body.fields).sort(), ['email', 'ownerName', 'password', 'workshopName']);
+      assert.deepEqual(Object.keys(invalid.body.fields).sort(), ['address', 'contactPhone', 'email', 'locality', 'ownerName', 'password', 'workshopName']);
       assert.equal(invalid.body.fields.password, 'Este campo no está permitido.', 'el registro ya no recibe contraseña');
       assert.ok(!invalid.text.includes('corta'), 'no repite los valores enviados');
 
@@ -181,7 +186,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
       await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
       const mails = api.outbox.length;
-      const fourth = await browser.post('/auth/register', { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      const fourth = await browser.post('/auth/register', { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid', ...contact });
       assert.equal(fourth.status, 202, 'misma respuesta');
       assert.equal(api.outbox.length, mails, 'no envía más de 3 por hora al mismo destinatario');
       assert.equal((await browser.post('/auth/registration/preview', { token: first })).status, 200, 'el primer enlace sigue vigente');

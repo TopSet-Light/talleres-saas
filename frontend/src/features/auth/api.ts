@@ -17,7 +17,9 @@ export const getMe = () => request<Me>('/auth/me');
 export const login = (email: string, password: string) => request<Me>('/auth/login', { method: 'POST', body: { email, password } });
 export const logout = () => request<void>('/auth/logout', { method: 'POST' });
 // El registro no lleva contraseña: se elige al abrir el enlace enviado al email.
-export const register = (body: { workshopName: string; ownerName: string; email: string }) =>
+export const register = (body: {
+  workshopName: string; ownerName: string; email: string; contactPhone: string; locality: string; address: string;
+}) =>
   request<Message>('/auth/register', { method: 'POST', body });
 export const previewRegistration = (token: string) =>
   request<RegistrationPreview>('/auth/registration/preview', { method: 'POST', body: { token } });
