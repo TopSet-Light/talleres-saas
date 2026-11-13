@@ -16,6 +16,9 @@ export interface AppConfig {
   /** Credenciales del proveedor SMTP. Mailpit no las usa; en producción se inyectan por entorno. */
   smtpUser?: string;
   smtpPassword?: string;
+  /** Cliente OAuth de Google. Sin ambos valores, el ingreso con Google queda deshabilitado. */
+  googleClientId?: string;
+  googleClientSecret?: string;
   mailFrom: string;
   /** Peticiones por minuto y por IP en registro, login, invitaciones y verificación. */
   authRateLimit: number;
@@ -55,6 +58,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const smtpPassword = env.SMTP_PASSWORD || undefined;
   // El mensaje nunca incluye los valores: la contraseña no debe llegar a logs.
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) throw new Error('SMTP_USER y SMTP_PASSWORD deben configurarse juntos');
+  const googleClientId = env.GOOGLE_CLIENT_ID || undefined;
+  const googleClientSecret = env.GOOGLE_CLIENT_SECRET || undefined;
+  if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
+    throw new Error('GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET deben configurarse juntos');
+  }
   return {
     appUrl,
     appOrigin,
@@ -64,6 +72,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtpSecure: env.SMTP_SECURE === undefined || env.SMTP_SECURE === '' ? smtpPort === 465 : env.SMTP_SECURE === 'true',
     smtpUser,
     smtpPassword,
+    googleClientId,
+    googleClientSecret,
     mailFrom: env.MAIL_FROM || 'Gestión de talleres <no-responder@talleres.local>',
     authRateLimit: positiveInteger(env.AUTH_RATE_LIMIT, 10, 'AUTH_RATE_LIMIT'),
     trustProxyHops: integer(env.TRUST_PROXY_HOPS, 1, 'TRUST_PROXY_HOPS', 0),
