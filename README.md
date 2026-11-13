@@ -133,6 +133,20 @@ Responde HTTP 200 después de ejecutar `SELECT 1` con Prisma. Si la consulta fal
 
 ## Desarrollo, logs y pruebas
 
+Con Node y pnpm en el anfitrión, ejecutá desde la raíz:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm format:check eslint.config.mjs package.json
+```
+
+ESLint revisa JavaScript y TypeScript en ambos paquetes, incluidas las reglas
+de Hooks en React. Pasá a `pnpm format:check` los archivos que quieras verificar
+y a `pnpm format` los que quieras formatear. Por ejemplo,
+`pnpm format frontend/src/main.tsx`. El código existente se puede formatear
+por archivo conforme se edite.
+
 ```sh
 docker compose ps
 docker compose logs -f frontend api postgres mailpit

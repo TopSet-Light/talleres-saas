@@ -4,6 +4,18 @@
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "build": "pnpm --filter frontend build && pnpm --filter backend build",
-    "test": "pnpm --filter frontend test && pnpm --filter backend test"
+    "test": "pnpm --filter frontend test && pnpm --filter backend test",
+    "lint": "eslint .",
+    "format": "prettier --write",
+    "format:check": "prettier --check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.10.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.2"
   }
 }
