@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
 export interface AppConfig {
@@ -22,6 +24,8 @@ export interface AppConfig {
    * el proxy del VPS en producción). Con 0 se usa la dirección de la conexión.
    */
   trustProxyHops: number;
+  /** Carpeta privada de archivos subidos (logos). Nunca se sirve de forma estática. */
+  filesDir: string;
 }
 
 function integer(value: string | undefined, fallback: number, name: string, min: number) {
@@ -63,5 +67,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mailFrom: env.MAIL_FROM || 'Gestión de talleres <no-responder@talleres.local>',
     authRateLimit: positiveInteger(env.AUTH_RATE_LIMIT, 10, 'AUTH_RATE_LIMIT'),
     trustProxyHops: integer(env.TRUST_PROXY_HOPS, 1, 'TRUST_PROXY_HOPS', 0),
+    filesDir: resolve(env.FILES_DIR || 'data/files'),
   };
 }

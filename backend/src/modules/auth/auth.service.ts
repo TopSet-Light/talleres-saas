@@ -14,6 +14,7 @@ import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordService } from './password.service';
 import { permissionsFor } from './permissions';
 import { SessionService } from './session.service';
+import { initializeWorkshopSettings } from '../workshop-settings/numbering.service';
 
 export const REGISTRATION_TTL_MS = 24 * 60 * 60 * 1000;
 /** Emails de registro por destinatario y por hora: evita usar el registro para inundar un buzón. */
@@ -122,6 +123,7 @@ export class AuthService {
         const user = await tx.user.create({ data: { email: pending.email, name: pending.ownerName } });
         await tx.credential.create({ data: { userId: user.id, passwordHash, emailVerifiedAt: now } });
         await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });
+        await initializeWorkshopSettings(tx, workshop.id, pending);
         await tx.pendingRegistration.updateMany({ where: { email: pending.email, usedAt: null }, data: { usedAt: now } });
       });
     } catch (error) {
