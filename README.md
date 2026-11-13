@@ -133,6 +133,20 @@ Responde HTTP 200 después de ejecutar `SELECT 1` con Prisma. Si la consulta fal
 
 ## Desarrollo, logs y pruebas
 
+Con Node y pnpm en el anfitrión, ejecutá desde la raíz:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm format:check eslint.config.mjs package.json
+```
+
+ESLint revisa JavaScript y TypeScript en ambos paquetes, incluidas las reglas
+de Hooks en React. Pasá a `pnpm format:check` los archivos que quieras verificar
+y a `pnpm format` los que quieras formatear. Por ejemplo,
+`pnpm format frontend/src/main.tsx`. El código existente se puede formatear
+por archivo conforme se edite.
+
 ```sh
 docker compose ps
 docker compose logs -f frontend api postgres mailpit
@@ -192,6 +206,12 @@ pnpm --filter backend test:data
 El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contraseña efímera y almacenamiento `tmpfs`, sin leer `.env` ni montar el volumen de desarrollo. Compila el backend y ejecuta los archivos de `backend/test/integration/`, cada uno en su propio esquema. Los datos prueban instalación vacía, actualización con datos, relaciones cruzadas, patentes, concurrencia, historial y rollback. El acceso levanta la API real contra esa base, con los emails capturados en memoria: registro en dos pasos (incluido el intento de apropiarse de un email ajeno), sesiones, invitaciones, permisos, accesos cruzados entre dos talleres, bajas y límites de intentos, también con `X-Forwarded-For` falso. Al finalizar elimina el contenedor. Si se interrumpe abruptamente, identificar cualquier contenedor `talleres-point07-*` con `docker ps` antes de detenerlo. Esta integración es independiente de `pnpm test` y no está incorporada al workflow de CI.
 
 ## Acceso y usuarios
+
+La referencia de TS-21 es [Acceso y cuenta · escritorio](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=55-373) y [Cuenta, acceso y administración · móvil](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=31-303).
+
+El registro requiere nombre comercial, responsable, email, teléfono de contacto, ciudad o localidad y dirección del taller. Los datos de contacto se guardan al verificar el correo y elegir la contraseña. El reenvío vuelve a solicitar el registro con los mismos datos, sujeto al límite de la API. Los talleres y enlaces creados antes de esta migración conservan sus datos existentes.
+
+Las pantallas de recuperación (AUTH-05) y configuración comercial (AUTH-07) incluyen su estado pendiente de integración. La vista previa del logo es local. Google aparece deshabilitado en acceso y registro. El [primer frame de Inicio y recepción](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=10-21) sirve de referencia para el Inicio autenticado. Los indicadores y las prioridades esperan los datos de EP-08.
 
 Implementa AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 (TS-19). Las decisiones, la matriz de permisos y sus motivos están en [docs/decisiones/0001-acceso.md](docs/decisiones/0001-acceso.md). Quedan fuera la recuperación de contraseña (AUTH-05) y los datos comerciales (AUTH-07).
 

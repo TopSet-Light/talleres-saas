@@ -106,6 +106,14 @@ Correcciones pedidas por Ezequiel-Cagolo. Mismo entorno que la sección anterior
 | Base local de desarrollo | Sin migrar en esta revisión: el entorno local quedó apagado a pedido del usuario. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
 | Pendiente | Revisión visual en navegador y diseño según Figma (indicado por la revisión). Proveedor SMTP de producción con autenticación, `MAIL_FROM` de dominio verificado y `APP_URL` HTTPS (comentario 8). Pruebas de integración fuera del CI. Sin lint configurado. |
 
+## TS-21 · Acceso y cuenta — 13 de noviembre de 2026
+
+- Figma MCP confirmó acceso a la copia. El plan Starter limitó la lectura detallada de algunos frames. Las referencias de escritorio y móvil están enlazadas en el README.
+- En Chrome a 1440 y 390 px se verificaron las pantallas de acceso y registro. Con Compose, Mailpit y PostgreSQL del proyecto de prueba se completaron alta, verificación por email, login, invitación, aceptación, baja, reactivación y logout.
+- Pasaron el build del frontend, 26 pruebas de frontend, 26 pruebas de integración del backend con PostgreSQL descartable, ESLint y `git diff --check`.
+- La migración de teléfono, país y localidad se aplicó en un entorno aislado. Las pruebas HTTP con PostgreSQL verificaron su persistencia al completar el alta y la conservación de talleres anteriores. En Chrome a 1440 y 390 px se revisó Inicio y se recorrió el registro con los nuevos campos, verificación y login con la API real.
+- Pendientes con API: recuperación (AUTH-05), persistencia comercial (AUTH-07) e indicadores de Inicio (EP-08). Google se presenta como botón deshabilitado. La API vigente unifica invitaciones vencidas, usadas y revocadas en un estado público.
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.

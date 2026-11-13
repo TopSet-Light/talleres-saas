@@ -24,6 +24,19 @@ export class RegisterDto extends EmailField {
   @IsString({ message: 'Ingresá tu nombre.' })
   @Length(2, 160, { message: 'Tu nombre debe tener entre 2 y 160 caracteres.' })
   ownerName!: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @MaxLength(40, { message: 'El teléfono debe tener hasta 40 caracteres.' })
+  @Matches(/^\+?(?=(?:\D*\d){6})[\d ().-]+$/, { message: 'Ingresá un teléfono con al menos 6 dígitos.' })
+  contactPhone!: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Length(2, 120, { message: 'Ingresá una ciudad o localidad de entre 2 y 120 caracteres.' })
+  locality!: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Length(2, 300, { message: 'Ingresá una dirección de entre 2 y 300 caracteres.' })
+  address!: string;
 }
 
 export class LoginDto extends EmailField {

@@ -26,6 +26,10 @@ enum CustomerType {
 model Workshop {
   id          String       @id @default(uuid()) @db.Uuid
   name        String       @db.VarChar(160)
+  contactPhone String?     @map("telefono_contacto") @db.VarChar(40)
+  legacyCountry String?    @map("pais") @db.VarChar(100)
+  locality     String?     @map("localidad") @db.VarChar(120)
+  address      String?     @map("direccion") @db.VarChar(300)
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   memberships Membership[]
   customers   Customer[]
@@ -166,6 +170,10 @@ model PendingRegistration {
   email        String    @db.VarChar(254)
   workshopName String    @map("nombre_taller") @db.VarChar(160)
   ownerName    String    @map("nombre_dueno") @db.VarChar(160)
+  contactPhone String?   @map("telefono_contacto") @db.VarChar(40)
+  legacyCountry String?  @map("pais") @db.VarChar(100)
+  locality     String?   @map("localidad") @db.VarChar(120)
+  address      String?   @map("direccion") @db.VarChar(300)
   tokenHash    String    @unique @map("token_hash") @db.Char(64)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt    DateTime  @map("expira_at") @db.Timestamptz(3)

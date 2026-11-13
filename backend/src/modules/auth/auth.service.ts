@@ -72,6 +72,7 @@ export class AuthService {
     await this.prisma.pendingRegistration.create({
       data: {
         email: dto.email, workshopName: dto.workshopName, ownerName: dto.ownerName,
+        contactPhone: dto.contactPhone, locality: dto.locality, address: dto.address,
         tokenHash: hashToken(token), createdAt: now, expiresAt: new Date(now.getTime() + REGISTRATION_TTL_MS),
       },
     });
@@ -111,7 +112,15 @@ export class AuthService {
           where: { id: pending.id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },
         });
         if (used.count !== 1) throw new BadRequestException(INVALID_REGISTRATION);
-        const workshop = await tx.workshop.create({ data: { name: pending.workshopName } });
+        const workshop = await tx.workshop.create({
+          data: {
+            name: pending.workshopName,
+            contactPhone: pending.contactPhone,
+            legacyCountry: pending.legacyCountry,
+            locality: pending.locality,
+            address: pending.address,
+          },
+        });
         const user = await tx.user.create({ data: { email: pending.email, name: pending.ownerName } });
         await tx.credential.create({ data: { userId: user.id, passwordHash, emailVerifiedAt: now } });
         await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });

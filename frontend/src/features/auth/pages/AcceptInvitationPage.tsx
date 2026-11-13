@@ -6,6 +6,7 @@ import { Alert } from '../../../shared/ui/Alert';
 import { Field } from '../../../shared/ui/Field';
 import { acceptInvitation, InvitationPreview, previewInvitation } from '../api';
 import { PASSWORD_HINT } from './RegisterPage';
+import { AuthScreen } from '../AuthScreen';
 
 type State =
   | { kind: 'loading' }
@@ -50,10 +51,14 @@ export function AcceptInvitationPage() {
   }
 
   return (
-    <main className="page narrow">
-      <h1>Invitación al taller</h1>
+    <AuthScreen title={state.kind === 'invalid' ? 'Invitación no disponible' : 'Aceptá tu invitación'} badge="Acceso al taller">
       {state.kind === 'loading' && <p aria-busy="true">Revisando la invitación…</p>}
-      {state.kind === 'invalid' && <Alert tone="error">{state.message}</Alert>}
+      {state.kind === 'invalid' && (
+        <>
+          <Alert tone="error">{state.message}</Alert>
+          <Link className="button-link" to="/login">Volver al inicio de sesión</Link>
+        </>
+      )}
       {state.kind === 'accepted' && (
         <>
           <Alert tone="success">{state.message}</Alert>
@@ -67,7 +72,7 @@ export function AcceptInvitationPage() {
             Tu usuario será <strong>{state.invitation.email}</strong>. La invitación vence el {formatDateTime(state.invitation.expiresAt)}.
           </p>
           {error && <Alert tone="error">{error.message}</Alert>}
-          <form onSubmit={onSubmit} noValidate>
+          <form className="auth-form" onSubmit={onSubmit} noValidate>
             <Field label="Tu nombre" name="name" autoComplete="name" required maxLength={160} error={error?.fields.name} />
             <Field label="Contraseña" name="password" type="password" autoComplete="new-password" required minLength={12} maxLength={128}
               hint={PASSWORD_HINT} error={error?.fields.password} />
@@ -77,6 +82,6 @@ export function AcceptInvitationPage() {
           </form>
         </>
       )}
-    </main>
+    </AuthScreen>
   );
 }
