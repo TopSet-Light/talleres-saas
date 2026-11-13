@@ -23,14 +23,22 @@ enum CustomerType {
   COMPANY
 }
 
+enum DocumentKind {
+  WORK_ORDER
+  ESTIMATE
+}
+
+// `name` es el nombre comercial; los demás datos comerciales están en WorkshopSettings.
 model Workshop {
-  id          String       @id @default(uuid()) @db.Uuid
-  name        String       @db.VarChar(160)
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  id          String              @id @default(uuid()) @db.Uuid
+  name        String              @db.VarChar(160)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   memberships Membership[]
   customers   Customer[]
   vehicles    Vehicle[]
   invitations Invitation[]
+  settings    WorkshopSettings?
+  numbering   DocumentNumbering[]
 
   @@map("taller")
 }
@@ -38,14 +46,16 @@ model Workshop {
 // Identidad de la persona. Credencial y sesiones viven en tablas propias.
 // Solo existe después de probar el control del buzón (registro completado o invitación aceptada).
 model User {
-  id                  String       @id @default(uuid()) @db.Uuid
-  email               String       @unique @db.VarChar(254)
-  name                String       @db.VarChar(160)
-  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                  String          @id @default(uuid()) @db.Uuid
+  email               String          @unique @db.VarChar(254)
+  name                String          @db.VarChar(160)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   membership          Membership?
   credential          Credential?
   sessions            Session[]
-  acceptedInvitations Invitation[] @relation("InvitationAcceptedBy")
+  acceptedInvitations Invitation[]    @relation("InvitationAcceptedBy")
+  passwordResets      PasswordReset[]
+  googleIdentity      GoogleIdentity?
 
   @@map("usuario")
 }
@@ -166,6 +176,10 @@ model PendingRegistration {
   email        String    @db.VarChar(254)
   workshopName String    @map("nombre_taller") @db.VarChar(160)
   ownerName    String    @map("nombre_dueno") @db.VarChar(160)
+  // Datos opcionales del formulario (TS-21); al completar pasan a la configuración del taller.
+  contactPhone String?   @map("telefono") @db.VarChar(40)
+  locality     String?   @map("localidad") @db.VarChar(120)
+  address      String?   @map("domicilio") @db.VarChar(300)
   tokenHash    String    @unique @map("token_hash") @db.Char(64)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt    DateTime  @map("expira_at") @db.Timestamptz(3)
@@ -174,6 +188,80 @@ model PendingRegistration {
   // Límite de envíos por destinatario.
   @@index([email, createdAt])
   @@map("registro_pendiente")
+}
+
+// AUTH-05. Enlace de un solo uso para elegir una contraseña nueva; se guarda solo su hash.
+model PasswordReset {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("usuario_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt DateTime  @map("expira_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("usada_at") @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  // Límite de envíos por destinatario.
+  @@index([userId, createdAt])
+  @@map("recuperacion_contrasena")
+}
+
+// Ingreso con Google: vincula la cuenta de Google (sub) con el usuario la primera vez
+// que entra con un email verificado. Después se reconoce por sub, no por email.
+model GoogleIdentity {
+  userId    String   @id @map("usuario_id") @db.Uuid
+  subject   String   @unique @map("sub") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("identidad_google")
+}
+
+// Inicio de un ingreso con Google: state (hash), nonce y verificador PKCE, de un solo uso.
+model GoogleLoginAttempt {
+  id           String    @id @default(uuid()) @db.Uuid
+  stateHash    String    @unique @map("state_hash") @db.Char(64)
+  nonce        String    @db.VarChar(64)
+  codeVerifier String    @map("code_verifier") @db.VarChar(128)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt    DateTime  @map("expira_at") @db.Timestamptz(3)
+  usedAt       DateTime? @map("usada_at") @db.Timestamptz(3)
+
+  @@map("inicio_google")
+}
+
+// AUTH-07 / CFG. Configuración comercial del taller, una fila por taller.
+model WorkshopSettings {
+  workshopId        String    @id @map("taller_id") @db.Uuid
+  taxId             String?   @map("cuit") @db.VarChar(11)
+  address           String?   @map("domicilio") @db.VarChar(300)
+  locality          String?   @map("localidad") @db.VarChar(120)
+  contactPhone      String?   @map("telefono") @db.VarChar(40)
+  contactEmail      String?   @map("email_contacto") @db.VarChar(254)
+  // Texto para el pie de presupuestos y comprobantes internos.
+  documentFooter    String?   @map("pie_documentos") @db.VarChar(1000)
+  quoteValidityDays Int       @default(15) @map("vigencia_presupuesto_dias")
+  defaultTerms      String?   @map("condiciones_predeterminadas") @db.VarChar(2000)
+  // Logo: el archivo vive en almacenamiento privado; acá solo su referencia.
+  logoKey           String?   @map("logo_archivo") @db.VarChar(200)
+  logoContentType   String?   @map("logo_tipo") @db.VarChar(20)
+  logoSize          Int?      @map("logo_bytes")
+  logoUpdatedAt     DateTime? @map("logo_actualizado_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  workshop          Workshop  @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("configuracion_taller")
+}
+
+// Correlativos por taller. El número se asigna con un UPDATE atómico (proximo = proximo + 1).
+model DocumentNumbering {
+  workshopId String       @map("taller_id") @db.Uuid
+  kind       DocumentKind @map("tipo")
+  prefix     String       @map("prefijo") @db.VarChar(10)
+  next       Int          @default(1) @map("proximo")
+  workshop   Workshop     @relation(fields: [workshopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([workshopId, kind])
+  @@map("numeracion_taller")
 }
 
 model Invitation {
