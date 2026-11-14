@@ -13,7 +13,7 @@ import { CompleteRegistrationDto, LoginDto, RegisterDto } from './dto';
 import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordService } from './password.service';
 import { permissionsFor } from './permissions';
-import { SessionService } from './session.service';
+import { SessionService, StaleAccessError } from './session.service';
 import { initializeWorkshopSettings } from '../workshop-settings/numbering.service';
 
 export const REGISTRATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -169,7 +169,14 @@ export class AuthService {
       });
     }
     this.attempts.reset(dto.email);
-    const session = await this.sessions.create(user.id);
+    let session;
+    try {
+      session = await this.sessions.create(user.id, new Date(), { passwordHash: user.credential.passwordHash });
+    } catch (error) {
+      // Un restablecimiento o una baja ocurrieron mientras se verificaba la contraseña.
+      if (error instanceof StaleAccessError) throw new UnauthorizedException(INVALID_CREDENTIALS);
+      throw error;
+    }
     const access = await this.sessions.resolve(session.token);
     if (!access) throw new UnauthorizedException(INVALID_CREDENTIALS);
     return { ...session, me: toMe(access) };

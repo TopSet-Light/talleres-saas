@@ -20,6 +20,7 @@ const second = '202611050002_data_integrity';
 const third = '202611090001_access';
 const fourth = '202611100001_pending_registration';
 const fifth = '202611130001_recovery_settings_google';
+const sixth = '202611140001_review_ts20';
 function urlFor(schema) {
   const url = new URL(baseUrl);
   url.searchParams.set('schema', schema);
@@ -50,7 +51,7 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       deploy('empty_install');
       assert.equal(await prisma.workshop.count(), 0);
       const migrations = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`;
-      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth, fifth]);
+      assert.deepEqual(migrations.map(row => row.migration_name), [first, second, third, fourth, fifth, sixth]);
     });
 
     await t.test('actualización de la primera migración conserva registros y agrega reglas e historial', async () => {

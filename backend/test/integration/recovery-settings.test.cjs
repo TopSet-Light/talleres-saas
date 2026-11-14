@@ -235,3 +235,121 @@ test('TS-20 · AUTH-07: configuración del taller, logo privado y numeración en
     await prisma.$disconnect();
   }
 });
+
+// --- Revisión del PR #6 (TS-20) ---------------------------------------------------------------
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+test('revisión TS-20: carreras de recuperación de contraseña', async t => {
+  const prisma = new PrismaClient({ datasourceUrl: databaseUrl, log: [] });
+  // Compuerta: permite frenar un login justo después de verificar la contraseña.
+  let gate = null;
+  const api = await startApi({
+    override: app => {
+      const { PasswordService } = require('../../dist/modules/auth/password.service');
+      const passwords = app.get(PasswordService);
+      const verify = passwords.verify.bind(passwords);
+      passwords.verify = async (...args) => {
+        const valid = await verify(...args);
+        if (gate) { gate.reached.resolve(); await gate.release.promise; }
+        return valid;
+      };
+    },
+  });
+  try {
+    const { me } = await registerOwner(api, { workshopName: 'Taller carrera', ownerName: 'Persona', email: 'carrera@example.invalid' });
+
+    await t.test('un login en curso con la contraseña anterior no crea una sesión válida tras el restablecimiento', async () => {
+      await new Browser(api).post('/auth/password/forgot', { email: 'carrera@example.invalid' });
+      const token = tokenFrom(api.outbox.at(-1));
+      gate = { reached: deferred(), release: deferred() };
+      const inFlight = new Browser(api).post('/auth/login', { email: 'carrera@example.invalid', password: PASSWORD });
+      await gate.reached.promise;
+      const stopped = gate;
+      gate = null;
+      // El login ya validó la contraseña anterior; ahora se restablece.
+      assert.equal((await new Browser(api).post('/auth/password/reset', { token, password: 'contraseña nueva de carrera' })).status, 200);
+      stopped.release.resolve();
+      const login = await inFlight;
+      assert.notEqual(login.status, 200, 'el login con la contraseña anterior se rechaza');
+      assert.equal(await prisma.session.count({ where: { userId: me.user.id, revokedAt: null } }), 0, 'no queda ninguna sesión activa');
+    });
+
+    await t.test('dos enlaces vigentes usados a la vez: uno funciona y el otro es inválido, sin error 500', async () => {
+      for (let round = 0; round < 5; round++) {
+        await prisma.passwordReset.deleteMany({});
+        await new Browser(api).post('/auth/password/forgot', { email: 'carrera@example.invalid' });
+        const first = tokenFrom(api.outbox.at(-1));
+        await new Browser(api).post('/auth/password/forgot', { email: 'carrera@example.invalid' });
+        const second = tokenFrom(api.outbox.at(-1));
+        const results = await Promise.all([first, second].map(token =>
+          new Browser(api).post('/auth/password/reset', { token, password: `contraseña paralela ${round}` })));
+        assert.deepEqual(results.map(r => r.status).sort(), [200, 400], `ronda ${round}`);
+      }
+    });
+  } finally {
+    await api.app.close();
+    await prisma.$disconnect();
+  }
+});
+
+test('revisión TS-20: validación de numeración y concurrencia del logo', async t => {
+  const prisma = new PrismaClient({ datasourceUrl: databaseUrl, log: [] });
+  const api = await startApi();
+  try {
+    const { browser: owner, me } = await registerOwner(api, { workshopName: 'Taller revisión', ownerName: 'Persona', email: 'revision@example.invalid' });
+
+    await t.test('omitir la numeración o una de sus partes responde 400', async () => {
+      const base = validSettings();
+      for (const [body, field] of [
+        [{ ...base, numbering: undefined }, 'numbering'],
+        [{ ...base, numbering: { estimate: base.numbering.estimate } }, 'numbering.workOrder'],
+        [{ ...base, numbering: { workOrder: { prefix: 'OT-', next: 1 } } }, 'numbering.estimate'],
+        [{ ...base, numbering: null }, 'numbering'],
+      ]) {
+        const response = await owner.put('/workshop-settings', body);
+        assert.equal(response.status, 400, field);
+        assert.ok(response.body.fields[field], `error en ${field}`);
+      }
+    });
+
+    await t.test('el prefijo no admite dígitos, para que el número visible sea inequívoco', async () => {
+      for (const prefix of ['OT-1', 'OT1-', '2026-']) {
+        const response = await owner.put('/workshop-settings', validSettings({ numbering: { workOrder: { prefix, next: 1 }, estimate: { prefix: 'PRE-', next: 1 } } }));
+        assert.equal(response.status, 400, prefix);
+        assert.ok(response.body.fields['numbering.workOrder.prefix']);
+      }
+      await assert.rejects(prisma.documentNumbering.update({
+        where: { workshopId_kind: { workshopId: me.workshop.id, kind: 'WORK_ORDER' } }, data: { prefix: 'OT-1' },
+      }), 'la base también lo impide');
+    });
+
+    const dbLogo = async () => (await prisma.workshopSettings.findUniqueOrThrow({ where: { workshopId: me.workshop.id } })).logoKey;
+    const consistent = async label => {
+      const key = await dbLogo();
+      const files = logoFiles(me.workshop.id);
+      assert.deepEqual(files, key ? [path.basename(key)] : [], `${label}: el disco coincide con la base`);
+    };
+
+    await t.test('subidas simultáneas dejan un solo archivo, el registrado en la base', async () => {
+      const results = await Promise.all(Array.from({ length: 6 }, () => uploadLogo(owner, logoForm(PNG))));
+      assert.ok(results.every(r => r.status === 200));
+      await consistent('subidas simultáneas');
+    });
+
+    await t.test('subir y borrar al mismo tiempo no deja archivos huérfanos', async () => {
+      for (let round = 0; round < 6; round++) {
+        await uploadLogo(owner, logoForm(PNG));
+        await Promise.all([uploadLogo(owner, logoForm(JPEG, 'logo.jpg', 'image/jpeg')), owner.delete('/workshop-settings/logo')]);
+        await consistent(`ronda ${round}`);
+      }
+    });
+  } finally {
+    await api.app.close();
+    await prisma.$disconnect();
+  }
+});

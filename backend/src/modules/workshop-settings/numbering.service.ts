@@ -3,7 +3,10 @@ import type { DocumentKind, Prisma } from '@prisma/client';
 
 export const DEFAULT_PREFIXES: Record<DocumentKind, string> = { WORK_ORDER: 'OT-', ESTIMATE: 'PRE-' };
 
-/** Número visible: prefijo y al menos 4 dígitos, por ejemplo «OT-0042». */
+/**
+ * Número visible: prefijo y al menos 4 dígitos, por ejemplo «OT-0042». Es inequívoco porque el
+ * prefijo no admite dígitos (validado en la API y en SQL): el número empieza en el primer dígito.
+ */
 export function formatDocumentNumber(prefix: string, value: number) {
   return `${prefix}${String(value).padStart(4, '0')}`;
 }

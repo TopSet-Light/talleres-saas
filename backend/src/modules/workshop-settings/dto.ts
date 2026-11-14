@@ -1,6 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
-  IsEmail, IsInt, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, Validate, ValidateNested,
+  IsDefined, IsEmail, IsInt, IsObject, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, Validate, ValidateNested,
   ValidatorConstraint, ValidatorConstraintInterface,
 } from 'class-validator';
 import { normalizeEmail, trimText } from '../../common/tokens';
@@ -19,10 +19,11 @@ class CuitConstraint implements ValidatorConstraintInterface {
 }
 
 export class NumberingDto {
-  // Prefijo opcional en mayúsculas, por ejemplo «OT-» o «PRE-».
+  // Prefijo opcional en mayúsculas, por ejemplo «OT-» o «PRE-». Sin dígitos: así «prefijo + número»
+  // no se confunde (con dígitos, «OT-1» + 0001 y «OT-» + 10001 darían el mismo OT-10001).
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsString({ message: 'Ingresá un prefijo.' })
-  @Matches(/^[A-Z0-9-]{0,10}$/, { message: 'El prefijo admite hasta 10 letras, números o guiones.' })
+  @Matches(/^[A-Z-]{0,10}$/, { message: 'El prefijo admite hasta 10 letras o guiones, sin números.' })
   prefix!: string;
 
   @IsInt({ message: 'El próximo número debe ser un entero.' })
@@ -31,10 +32,15 @@ export class NumberingDto {
   next!: number;
 }
 
+// @ValidateNested no exige que el objeto exista: IsDefined e IsObject evitan un 500 si falta.
 export class NumberingSettingsDto {
+  @IsDefined({ message: 'Completá la numeración de órdenes.' })
+  @IsObject({ message: 'Completá la numeración de órdenes.' })
   @ValidateNested() @Type(() => NumberingDto)
   workOrder!: NumberingDto;
 
+  @IsDefined({ message: 'Completá la numeración de presupuestos.' })
+  @IsObject({ message: 'Completá la numeración de presupuestos.' })
   @ValidateNested() @Type(() => NumberingDto)
   estimate!: NumberingDto;
 }
@@ -89,6 +95,8 @@ export class UpdateWorkshopSettingsDto {
   @MaxLength(2000, { message: 'Las condiciones admiten hasta 2000 caracteres.' })
   defaultTerms!: string | null;
 
+  @IsDefined({ message: 'Completá la numeración.' })
+  @IsObject({ message: 'Completá la numeración.' })
   @ValidateNested() @Type(() => NumberingSettingsDto)
   numbering!: NumberingSettingsDto;
 }

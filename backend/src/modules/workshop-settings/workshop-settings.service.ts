@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { DocumentKind, DocumentNumbering, WorkshopSettings } from '@prisma/client';
+import type { DocumentKind, DocumentNumbering, Prisma, WorkshopSettings } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { Access } from '../auth/access';
@@ -109,7 +109,9 @@ export class WorkshopSettingsService {
     try {
       await this.prisma.$transaction(async tx => {
         await initializeWorkshopSettings(tx, access.workshopId);
-        previous = (await tx.workshopSettings.findUniqueOrThrow({ where: { workshopId: access.workshopId } })).logoKey;
+        // Bloqueo de la fila: subidas y borrados simultáneos se atienden de a uno, así el archivo
+        // que se borra después es siempre el que esta operación quitó de la base.
+        previous = await this.lockLogoKey(tx, access.workshopId);
         await tx.workshopSettings.update({
           where: { workshopId: access.workshopId },
           data: { logoKey: key, logoContentType: format.contentType, logoSize: content.length, logoUpdatedAt: new Date() },
@@ -124,13 +126,25 @@ export class WorkshopSettingsService {
   }
 
   async deleteLogo(access: Access) {
-    const settings = await this.prisma.workshopSettings.findUnique({ where: { workshopId: access.workshopId } });
-    if (!settings?.logoKey) throw new NotFoundException(NO_LOGO);
-    await this.prisma.workshopSettings.update({
-      where: { workshopId: access.workshopId },
-      data: { logoKey: null, logoContentType: null, logoSize: null, logoUpdatedAt: null },
+    // Leer la clave y limpiarla en la misma operación bloqueada (revisión de TS-20): si en el medio
+    // entra una subida, se borra el archivo que efectivamente salió de la base, no uno anterior.
+    const removed = await this.prisma.$transaction(async tx => {
+      const key = await this.lockLogoKey(tx, access.workshopId);
+      if (!key) return null;
+      await tx.workshopSettings.update({
+        where: { workshopId: access.workshopId },
+        data: { logoKey: null, logoContentType: null, logoSize: null, logoUpdatedAt: null },
+      });
+      return key;
     });
-    await this.removeQuietly(settings.logoKey);
+    if (!removed) throw new NotFoundException(NO_LOGO);
+    await this.removeQuietly(removed);
+  }
+
+  private async lockLogoKey(tx: Prisma.TransactionClient, workshopId: string) {
+    const rows = await tx.$queryRaw<{ logo_archivo: string | null }[]>`
+      SELECT logo_archivo FROM configuracion_taller WHERE taller_id = ${workshopId}::uuid FOR UPDATE`;
+    return rows[0]?.logo_archivo ?? null;
   }
 
   /** Cualquier integrante del taller puede ver el logo (se usa en documentos); nadie de otro taller. */

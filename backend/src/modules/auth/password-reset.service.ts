@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, AppConfig } from '../../config/app-config';
-import { EMAILS_PER_RECIPIENT_PER_HOUR, lockRecipient, ONE_HOUR_MS } from '../../common/email-quota';
+import { EMAILS_PER_RECIPIENT_PER_HOUR, lockKey, lockRecipient, ONE_HOUR_MS } from '../../common/email-quota';
 import { hashToken, newToken } from '../../common/tokens';
 import { PrismaService } from '../../database/prisma.service';
 import { MailService } from '../../mail/mail.service';
@@ -75,6 +75,11 @@ export class PasswordResetService {
     rejectPasswordEqualToEmail(password, reset.user.email);
     const passwordHash = await this.passwords.hash(password);
     await this.prisma.$transaction(async tx => {
+      // Serializa los restablecimientos de la misma cuenta antes de consumir el enlace: con dos
+      // enlaces vigentes usados a la vez, cada transacción bloqueaba el suyo y esperaba el de la
+      // otra (PostgreSQL abortaba una y la API respondía 500). Ahora el segundo ve su enlace
+      // anulado y recibe «enlace inválido» (revisión de TS-20).
+      await lockKey(tx, `restablecimiento:${reset.userId}`);
       // Condicional: dos usos simultáneos del mismo enlace no pasan ambos.
       const used = await tx.passwordReset.updateMany({
         where: { id: reset.id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },

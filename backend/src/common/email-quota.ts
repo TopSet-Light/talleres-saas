@@ -4,6 +4,11 @@ import type { Prisma } from '@prisma/client';
 export const EMAILS_PER_RECIPIENT_PER_HOUR = 3;
 export const ONE_HOUR_MS = 60 * 60 * 1000;
 
+/** Bloqueo transaccional por clave arbitraria (por ejemplo, un usuario). Se libera al terminar la transacción. */
+export async function lockKey(tx: Prisma.TransactionClient, key: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+}
+
 /**
  * Serializa, dentro de la transacción, las operaciones sobre un mismo destinatario.
  * Contar los envíos recientes y registrar uno nuevo debe ser atómico: sin este bloqueo,

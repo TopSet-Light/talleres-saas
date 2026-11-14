@@ -46,16 +46,17 @@ model Workshop {
 // Identidad de la persona. Credencial y sesiones viven en tablas propias.
 // Solo existe después de probar el control del buzón (registro completado o invitación aceptada).
 model User {
-  id                  String          @id @default(uuid()) @db.Uuid
-  email               String          @unique @db.VarChar(254)
-  name                String          @db.VarChar(160)
-  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                  String               @id @default(uuid()) @db.Uuid
+  email               String               @unique @db.VarChar(254)
+  name                String               @db.VarChar(160)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   membership          Membership?
   credential          Credential?
   sessions            Session[]
-  acceptedInvitations Invitation[]    @relation("InvitationAcceptedBy")
+  acceptedInvitations Invitation[]         @relation("InvitationAcceptedBy")
   passwordResets      PasswordReset[]
   googleIdentity      GoogleIdentity?
+  googleLinkAttempts  GoogleLoginAttempt[]
 
   @@map("usuario")
 }
@@ -216,9 +217,12 @@ model GoogleIdentity {
   @@map("identidad_google")
 }
 
-// Inicio de un ingreso con Google: state (hash), nonce y verificador PKCE, de un solo uso.
+// Inicio de un ingreso o una vinculación con Google: state (hash), nonce y verificador PKCE,
+// de un solo uso. Con userId es una vinculación iniciada desde una sesión con contraseña.
 model GoogleLoginAttempt {
   id           String    @id @default(uuid()) @db.Uuid
+  userId       String?   @map("usuario_id") @db.Uuid
+  user         User?     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   stateHash    String    @unique @map("state_hash") @db.Char(64)
   nonce        String    @db.VarChar(64)
   codeVerifier String    @map("code_verifier") @db.VarChar(128)
