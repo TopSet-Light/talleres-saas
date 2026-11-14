@@ -119,6 +119,26 @@ Alcance: AUTH-05, AUTH-07/CFG, ingreso con Google para cuentas existentes, datos
 | Base local de desarrollo | Sin migrar: el entorno local queda apagado. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
 | Pendiente | **Google:** probar con un cliente OAuth real (sin credenciales todavía). **TS-21:** conectar el frontend (recuperación, configuración, `/auth/options`, `/login?google=…` y subida del logo); TS-20 no modifica pantallas. **Volumen de archivos:** incluir en los backups. **Limpieza:** de intentos y enlaces vencidos. **CI:** las pruebas de integración siguen fuera. |
 
+## Revisión del PR #6 (TS-20) — 14 de noviembre de 2026
+
+Correcciones pedidas por Ezequiel-Cagolo. Para cada comentario se escribió primero una prueba de integración que lo reproduce; las 17 pruebas nuevas o adaptadas fallaron con el código anterior y pasan con las correcciones.
+
+| Comentario | Falla reproducida con el código anterior | Resultado con la corrección |
+| --- | --- | --- |
+| 1 · Vincular Google exige controlar la cuenta | Una cuenta de Google con el email del dueño, nunca vinculada, entraba a su cuenta. | Responde `not-linked` y no crea vínculo. La vinculación exige sesión con contraseña y la misma sesión que la inició. Se prueban el robo de `state` por otra sesión, el cierre de sesión en el medio, los conflictos de vínculo y la desvinculación. |
+| 2 · Login en curso con la contraseña anterior | Un login frenado después de verificar la contraseña anterior terminó en 200 con una sesión activa tras el restablecimiento. | El login se rechaza y no queda ninguna sesión activa. La prueba frena el login de forma determinista entre la verificación y la creación de la sesión. |
+| 3 · Restablecimientos simultáneos | Dos enlaces vigentes usados a la vez devolvieron 500 (bloqueo mutuo). | 5 rondas: siempre uno 200 y el otro 400. |
+| 4 · Numeración incompleta | Omitir `numbering` devolvió 500. | 400 con el campo indicado al omitir `numbering`, `workOrder` o `estimate`, o enviar `null`. |
+| 5 · Números visibles duplicados | Los prefijos con dígitos se aceptaban. | La API rechaza `OT-1`, `OT1-` y `2026-`, y la base también (migración `202611140001_review_ts20`). |
+| 6 · Archivos de logo huérfanos | 6 subidas simultáneas dejaron 4 archivos en disco. | Queda un solo archivo, el registrado en la base. 6 rondas de subida y borrado simultáneos mantienen el disco igual que la base. |
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Clon limpio de la rama (`1cc56cd`) | `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` y `git diff --check` aprobados. `pnpm test`: frontend 26/26, backend 13/13. |
+| Integración con PostgreSQL real | `pnpm --filter backend test:data`: 62/62, en tres corridas consecutivas (las pruebas de concurrencia no fallaron en ninguna). |
+| Recorrido real en Docker | Proyecto descartable desde el clon limpio, eliminado al terminar: 19/19 a través de Vite y Mailpit. |
+| Pendiente | **Google:** probar con un cliente OAuth real. **TS-21:** necesita el botón «Vincular con Google» (`/api/auth/google/link/start`) y los nuevos motivos (`not-linked`; `?google=linked` y `?google=conflict` en el inicio). Lo demás pendiente de TS-20 sigue igual. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.
