@@ -6,17 +6,19 @@ import { Prisma } from '@prisma/client';
 import { APP_CONFIG, AppConfig } from '../../config/app-config';
 import { PrismaService } from '../../database/prisma.service';
 import { MailService } from '../../mail/mail.service';
+import { EMAILS_PER_RECIPIENT_PER_HOUR, lockRecipient, ONE_HOUR_MS } from '../../common/email-quota';
 import { hashToken, newToken } from '../../common/tokens';
 import { Access } from './access';
 import { CompleteRegistrationDto, LoginDto, RegisterDto } from './dto';
 import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordService } from './password.service';
 import { permissionsFor } from './permissions';
-import { SessionService } from './session.service';
+import { SessionService, StaleAccessError } from './session.service';
+import { initializeWorkshopSettings } from '../workshop-settings/numbering.service';
 
 export const REGISTRATION_TTL_MS = 24 * 60 * 60 * 1000;
 /** Emails de registro por destinatario y por hora: evita usar el registro para inundar un buzón. */
-export const REGISTRATION_EMAILS_PER_HOUR = 3;
+export const REGISTRATION_EMAILS_PER_HOUR = EMAILS_PER_RECIPIENT_PER_HOUR;
 
 const INVALID_CREDENTIALS = { statusCode: 401, code: 'INVALID_CREDENTIALS', message: 'Email o contraseña incorrectos.' };
 const INVALID_REGISTRATION = {
@@ -63,19 +65,25 @@ export class AuthService {
    * anteriores; se limita la cantidad de emails por destinatario.
    */
   async register(dto: RegisterDto, now = new Date()) {
-    if (await this.prisma.user.findUnique({ where: { email: dto.email }, select: { id: true } })) return;
-    const recent = await this.prisma.pendingRegistration.count({
-      where: { email: dto.email, createdAt: { gt: new Date(now.getTime() - 60 * 60 * 1000) } },
-    });
-    if (recent >= REGISTRATION_EMAILS_PER_HOUR) return;
     const token = newToken();
-    await this.prisma.pendingRegistration.create({
-      data: {
-        email: dto.email, workshopName: dto.workshopName, ownerName: dto.ownerName,
-        contactPhone: dto.contactPhone, locality: dto.locality, address: dto.address,
-        tokenHash: hashToken(token), createdAt: now, expiresAt: new Date(now.getTime() + REGISTRATION_TTL_MS),
-      },
+    // Verificación del límite y reserva del envío en una sola operación atómica por destinatario.
+    const reserved = await this.prisma.$transaction(async tx => {
+      await lockRecipient(tx, 'registro', dto.email);
+      if (await tx.user.findUnique({ where: { email: dto.email }, select: { id: true } })) return false;
+      const recent = await tx.pendingRegistration.count({
+        where: { email: dto.email, createdAt: { gt: new Date(now.getTime() - ONE_HOUR_MS) } },
+      });
+      if (recent >= REGISTRATION_EMAILS_PER_HOUR) return false;
+      await tx.pendingRegistration.create({
+        data: {
+          email: dto.email, workshopName: dto.workshopName, ownerName: dto.ownerName,
+          contactPhone: dto.contactPhone ?? null, locality: dto.locality ?? null, address: dto.address ?? null,
+          tokenHash: hashToken(token), createdAt: now, expiresAt: new Date(now.getTime() + REGISTRATION_TTL_MS),
+        },
+      });
+      return true;
     });
+    if (!reserved) return;
     // El token va en el fragmento (#) para que no llegue a logs ni a otros sitios por Referer.
     const link = `${this.config.appUrl}/verificar-email#token=${token}`;
     await this.mail.send({
@@ -124,6 +132,7 @@ export class AuthService {
         const user = await tx.user.create({ data: { email: pending.email, name: pending.ownerName } });
         await tx.credential.create({ data: { userId: user.id, passwordHash, emailVerifiedAt: now } });
         await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });
+        await initializeWorkshopSettings(tx, workshop.id, pending);
         await tx.pendingRegistration.updateMany({ where: { email: pending.email, usedAt: null }, data: { usedAt: now } });
       });
     } catch (error) {
@@ -168,7 +177,14 @@ export class AuthService {
       });
     }
     this.attempts.reset(dto.email);
-    const session = await this.sessions.create(user.id);
+    let session;
+    try {
+      session = await this.sessions.create(user.id, new Date(), { passwordHash: user.credential.passwordHash });
+    } catch (error) {
+      // Un restablecimiento o una baja ocurrieron mientras se verificaba la contraseña.
+      if (error instanceof StaleAccessError) throw new UnauthorizedException(INVALID_CREDENTIALS);
+      throw error;
+    }
     const access = await this.sessions.resolve(session.token);
     if (!access) throw new UnauthorizedException(INVALID_CREDENTIALS);
     return { ...session, me: toMe(access) };

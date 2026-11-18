@@ -22,6 +22,13 @@ services:
       APP_URL: http://localhost:${FRONTEND_PORT:-5173}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
+      # Archivos privados (logos): volumen propio, nunca servido como estático.
+      FILES_DIR: /app/backend/data/files
+      # Opcionales: sin ellas el botón de Google queda deshabilitado.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - workshop_files:/app/backend/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,3 +60,4 @@ services:
 
 volumes:
   postgres_data:
+  workshop_files:

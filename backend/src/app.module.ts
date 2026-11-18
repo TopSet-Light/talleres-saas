@@ -12,6 +12,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { EmployeesController } from './modules/users/employees.controller';
 import { InvitationsController } from './modules/users/invitations.controller';
 import { UsersModule } from './modules/users/users.module';
+import { WorkshopSettingsController } from './modules/workshop-settings/workshop-settings.controller';
+import { WorkshopSettingsModule } from './modules/workshop-settings/workshop-settings.module';
 
 @Module({
   imports: [
@@ -27,11 +29,12 @@ import { UsersModule } from './modules/users/users.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    WorkshopSettingsModule,
   ],
   providers: [{ provide: APP_PIPE, useFactory: createValidationPipe }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(cookieParser(), OriginMiddleware).forRoutes(AuthController, EmployeesController, InvitationsController);
+    consumer.apply(cookieParser(), OriginMiddleware).forRoutes(AuthController, EmployeesController, InvitationsController, WorkshopSettingsController);
   }
 }

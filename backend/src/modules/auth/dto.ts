@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import { normalizeEmail, TOKEN_PATTERN, trimText } from '../../common/tokens';
 import { PASSWORD_MAX, PASSWORD_MIN } from './password.service';
 
@@ -26,17 +26,20 @@ export class RegisterDto extends EmailField {
   ownerName!: string;
 
   @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
   @MaxLength(40, { message: 'El teléfono debe tener hasta 40 caracteres.' })
   @Matches(/^\+?(?=(?:\D*\d){6})[\d ().-]+$/, { message: 'Ingresá un teléfono con al menos 6 dígitos.' })
-  contactPhone!: string;
+  contactPhone?: string;
 
   @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
   @Length(2, 120, { message: 'Ingresá una ciudad o localidad de entre 2 y 120 caracteres.' })
-  locality!: string;
+  locality?: string;
 
   @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
   @Length(2, 300, { message: 'Ingresá una dirección de entre 2 y 300 caracteres.' })
-  address!: string;
+  address?: string;
 }
 
 export class LoginDto extends EmailField {
@@ -49,6 +52,12 @@ export class TokenDto {
   @IsString({ message: 'El enlace no es válido.' })
   @Matches(TOKEN_PATTERN, { message: 'El enlace no es válido.' })
   token!: string;
+}
+
+export class ResetPasswordDto extends TokenDto {
+  @IsString({ message: PASSWORD })
+  @Length(PASSWORD_MIN, PASSWORD_MAX, { message: PASSWORD })
+  password!: string;
 }
 
 export class CompleteRegistrationDto extends TokenDto {
