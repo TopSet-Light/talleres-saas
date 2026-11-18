@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { SessionProvider, useSession } from '../../features/auth/session';
-import { toApiError } from '../../shared/api/http';
+import { GoogleFeedback } from '../../features/auth/GoogleAccess';
 import { ROLE_LABELS } from '../../shared/lib/format';
-import { Alert } from '../../shared/ui/Alert';
 
 const upcoming = [
   ['▤', 'Órdenes de trabajo', 'workOrders.diagnose'],
@@ -34,40 +33,21 @@ function MenuIcon({ name }: { name: string }) {
   );
 }
 
-function Header({ home }: { home: boolean }) {
-  const { state, logout } = useSession();
-  const navigate = useNavigate();
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
+function Header({ home, showAccount }: { home: boolean; showAccount: boolean }) {
+  const { state } = useSession();
   const [accountOpen, setAccountOpen] = useState(false);
   const me = state.status === 'authenticated' ? state.me : null;
 
-  async function onLogout() {
-    setLoggingOut(true);
-    setLogoutError(null);
-    try {
-      await logout();
-      navigate('/login', { replace: true });
-    } catch (error) {
-      // Si el servidor no confirmó el cierre, la sesión sigue abierta: se informa y se puede reintentar.
-      setLogoutError(toApiError(error).message);
-    } finally {
-      setLoggingOut(false);
-    }
-  }
-
   const logoutButton = (
-    <button className="workspace-logout" type="button" disabled={loggingOut} onClick={() => void onLogout()}>
-      {loggingOut ? 'Cerrando…' : 'Cerrar sesión'}
-    </button>
+    <Link className="workspace-logout" to="/cerrar-sesion">Cerrar sesión</Link>
   );
   const accountActions = me && (
     <>
-      <strong>{me.user.name}</strong>
+      <Link className="workspace-profile" to="/perfil"><strong>{me.user.name}</strong><span className="visually-hidden"> · Mi perfil</span></Link>
       <div>{ROLE_LABELS[me.role]}</div>
     </>
   );
-  const settingsLink = me?.role === 'OWNER' && (
+  const settingsLink = me?.permissions.includes('settings.read') && (
     <NavLink to="/configuracion"><MenuIcon name="⚙" /> Configuración</NavLink>
   );
 
@@ -75,7 +55,9 @@ function Header({ home }: { home: boolean }) {
     return (
       <>
         <header className="home-mobile-bar">
-          <span className="taller-brand"><span className="taller-symbol" aria-hidden="true">T</span>{me.workshop.name}</span>
+          <span className="taller-brand"><span className="taller-symbol" aria-hidden="true">T</span>
+            {showAccount ? <span className="mobile-account-brand">Tsgarage<small>{me.workshop.name}</small></span> : me.workshop.name}
+          </span>
           <details className="home-mobile-account" onToggle={event => setAccountOpen(event.currentTarget.open)}>
             <summary className="home-role">{ROLE_LABELS[me.role]}</summary>
             {accountOpen && (
@@ -109,9 +91,8 @@ function Header({ home }: { home: boolean }) {
           <NavLink to="/" end><span aria-hidden="true">⌂</span>Inicio</NavLink>
           <button type="button" disabled><span aria-hidden="true">▤</span>Órdenes</button>
           <button type="button" disabled><span aria-hidden="true">⌕</span>Buscar</button>
-          <NavLink to="/mas" end><span aria-hidden="true">···</span>Más</NavLink>
+          <NavLink to="/mas" end className={showAccount ? 'account-nav-active' : undefined}><span aria-hidden="true">···</span>Más</NavLink>
         </nav>
-        {logoutError && <div className="home-logout-error"><Alert tone="error">No se cerró la sesión: {logoutError} Volvé a intentar con «Cerrar sesión».</Alert></div>}
       </>
     );
   }
@@ -127,17 +108,12 @@ function Header({ home }: { home: boolean }) {
               {settingsLink}
             </nav>
             <div className="account">
-              <span>{me.user.name} · {ROLE_LABELS[me.role]}</span>
+              <Link className="workspace-profile" to="/perfil">Mi perfil</Link>
               {logoutButton}
             </div>
           </>
         )}
       </div>
-      {me && logoutError && (
-        <div className="topbar-inner">
-          <Alert tone="error">No se cerró la sesión: {logoutError} Volvé a intentar con «Cerrar sesión».</Alert>
-        </div>
-      )}
     </header>
   );
 }
@@ -152,13 +128,19 @@ export function AppLayout() {
 
 function LayoutContent() {
   const { state } = useSession();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const authenticated = state.status === 'authenticated';
-  const home = pathname === '/' || /^\/mas\/?$/i.test(pathname);
+  const showAccount = /^\/(perfil|cerrar-sesion)\/?$/i.test(pathname);
+  const home = showAccount || pathname === '/' || /^\/(mas|configuracion)\/?$/i.test(pathname);
   return (
     <div className={authenticated ? `workspace-layout${home ? ' workspace-home' : ''}` : undefined}>
-      {authenticated && <Header home={home} />}
-      <div className="workspace-content"><Outlet /></div>
+      {authenticated && <Header home={home} showAccount={showAccount} />}
+      <div className="workspace-content">
+        {authenticated && pathname === '/' && new URLSearchParams(search).has('google') && (
+          <div className="account-feedback"><GoogleFeedback search={search} /></div>
+        )}
+        <Outlet />
+      </div>
     </div>
   );
 }

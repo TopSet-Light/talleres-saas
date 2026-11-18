@@ -6,7 +6,9 @@ import { RegisterPage } from '../features/auth/pages/RegisterPage';
 import { RecoveryPage } from '../features/auth/pages/RecoveryPage';
 import { WorkshopSettingsPage } from '../features/auth/pages/WorkshopSettingsPage';
 import { CompleteRegistrationPage } from '../features/auth/pages/CompleteRegistrationPage';
-import { RequireSession } from '../features/auth/RequireSession';
+import { GoogleRegistrationPage } from '../features/auth/pages/GoogleRegistrationPage';
+import { ConfirmLogoutPage, ProfilePage } from '../features/auth/pages/AccountPages';
+import { ExpiredSessionPage, RequireSession } from '../features/auth/RequireSession';
 import { EmployeesPage } from '../features/users/pages/EmployeesPage';
 import { AppLayout } from './layouts/AppLayout';
 import { HomePage } from './pages/HomePage';
@@ -22,9 +24,13 @@ export const routes: RouteObject[] = [{
     { index: true, element: <RequireSession><HomePage /></RequireSession> },
     { path: 'mas', element: <RequireSession><MorePage /></RequireSession> },
     { path: 'empleados', element: <RequireSession permission="employees.read"><EmployeesPage /></RequireSession> },
-    { path: 'configuracion', element: <RequireSession workshopOwner><WorkshopSettingsPage /></RequireSession> },
+    { path: 'configuracion', element: <RequireSession permission="settings.read"><WorkshopSettingsPage /></RequireSession> },
     { path: 'login', element: <LoginPage /> },
     { path: 'registro', element: <RegisterPage /> },
+    { path: 'registro/google', element: <GoogleRegistrationPage /> },
+    { path: 'perfil', element: <RequireSession><ProfilePage /></RequireSession> },
+    { path: 'cerrar-sesion', element: <RequireSession><ConfirmLogoutPage /></RequireSession> },
+    { path: 'sesion-vencida', element: <ExpiredSessionPage /> },
     // Destino del enlace del email de registro: allí se elige la contraseña.
     { path: 'verificar-email', element: <CompleteRegistrationPage /> },
     { path: 'invitacion', element: <AcceptInvitationPage /> },

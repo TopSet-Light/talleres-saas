@@ -126,6 +126,24 @@ main.auth-screen { max-width: none; margin: 0 auto; padding: 0; font-size: 14px;
 .auth-divider { display: flex; align-items: center; gap: 12px; width: 100%; color: var(--taller-muted); }
 .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--taller-line); }
 .google-button { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.button-link.primary { background: var(--taller-primary); border-color: var(--taller-primary); color: white; }
+.auth-screen-card .auth-card, .auth-screen-notice .auth-card { background: white; border: 1px solid var(--taller-line); border-radius: 12px; }
+.auth-screen-card .auth-heading, .auth-screen-notice .auth-heading { gap: 14px; }
+.auth-screen-card .auth-form, .auth-screen-notice .auth-form { border: 0; padding: 0; gap: 14px; }
+.auth-screen-card .auth-badge, .auth-screen-notice .auth-badge {
+  display: inline-block; justify-self: start; border-radius: 20px; background-color: #dbeafe; color: #1e40af;
+  padding: 4px 9px; font-size: 11px; line-height: 16px; font-weight: 600;
+}
+
+@media (max-width: 639px) {
+  main.auth-screen-card, main.auth-screen-notice { padding: 16px; }
+  .auth-screen-card .auth-card, .auth-screen-notice .auth-card { margin-top: 16px; padding: 20px 16px; }
+  .auth-screen-card .auth-card h1, .auth-screen-notice .auth-card h1 { font-size: 26px; line-height: 32px; }
+  .auth-screen-card .auth-identity, .auth-screen-notice .auth-identity { min-height: 60px; border-radius: 10px; }
+  .auth-screen-card .desktop-brand-label, .auth-screen-notice .desktop-brand-label { display: inline; }
+  .auth-screen-card .mobile-access-label, .auth-screen-notice .mobile-access-label { display: none; }
+  .auth-screen-card .taller-symbol, .auth-screen-notice .taller-symbol { width: auto; height: auto; background: none; font-size: 17px; }
+}
 
 .workspace-layout .topbar { background: #0f172a; color: white; }
 .workspace-layout .topbar nav a { color: white; padding: 10px 4px; }
@@ -149,7 +167,15 @@ dialog::backdrop { background: rgb(15 23 42 / 55%); }
   .auth-badge { display: inline-block; justify-self: start; padding: 4px 9px; border-radius: 20px; background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 600; }
   .auth-form { padding: 0; border: 0; gap: 14px; }
   .auth-field-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .auth-identity { border-radius: 10px; }
+  .auth-identity .taller-symbol { width: auto; height: auto; background: none; font-size: 17px; }
+  .auth-identity .desktop-brand-label { margin-left: 0; }
+  .auth-screen .auth-card h1 { font-size: 30px; line-height: 42px; }
+  .auth-screen .form-section-title { display: none; }
 }
+.auth-screen .auth-badge-warning { background: #fef3c7; color: #92400e; }
+.auth-screen .auth-badge-danger { background: #fee2e2; color: #991b1b; }
+.auth-screen .auth-badge-success { background: #dcfce7; color: #166534; }
 @media (min-width: 900px) {
   .workspace-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100dvh; }
   .workspace-layout .topbar { background: white; border-right: 1px solid var(--taller-line); color: #0f172a; }
@@ -171,13 +197,22 @@ main.home-page { max-width: none; margin: 0; padding: 0; }
 .home-mobile-nav > :is(a, button) { display: grid; place-items: center; align-content: center; gap: 3px; min-height: 58px; padding: 5px; color: #334155; background: white; border: 0; border-radius: 0; font-size: 11px; font-weight: 600; text-decoration: none; list-style: none; }
 .home-mobile-nav > .active { background: #dbeafe; color: var(--taller-primary); }
 .home-mobile-nav span { font-size: 17px; line-height: 1; }
-button.workspace-logout {
+.workspace-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
   border-color: #713746;
   background: #382331;
   color: #fca5a5;
 }
 
-button.workspace-logout:hover:not(:disabled) {
+.workspace-logout:hover {
   border-color: #9f4b59;
   background: #4b2937;
 }
@@ -185,7 +220,38 @@ button.workspace-logout:hover:not(:disabled) {
 .home-sidebar-account, .home-account-details { display: grid; gap: 8px; }
 .home-sidebar-account { font-size: 13px; }
 .home-account-details { padding: 8px; border-radius: 8px; background: #f1f5f9; }
-.home-logout-error { position: fixed; z-index: 3; top: 12px; right: 16px; max-width: min(380px, calc(100% - 32px)); }
+.workspace-profile { color: inherit; }
+.mobile-account-brand { display: grid; }
+.mobile-account-brand small { font-size: 11px; }
+.home-mobile-nav > .account-nav-active { background: #dbeafe; color: var(--taller-primary); }
+.account-feedback { padding: 0 16px; }
+.workspace-layout main.account-page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 80px; font-size: 14px; }
+.account-page h1 { margin: 18px 0 4px; letter-spacing: 0; }
+.account-page > p { margin: 0 0 16px; }
+.workspace-layout .account-page-panel {
+  display: grid; justify-items: start; gap: 10px; max-width: 732px;
+  margin: 16px 0 0; padding: 16px; background: white; overflow-wrap: anywhere;
+}
+.account-page-panel h2, .account-page-panel p { margin: 0; }
+.account-page-panel h2 { font-size: 17px; }
+.account-logout-notice { width: 100%; padding: 14px 16px; border-radius: 8px; background: #fef3c7; color: #92400e; }
+.account-logout-notice p { margin-top: 6px; font-size: 13px; }
+.account-logout-link { background: #643848; border-color: #643848; color: white; }
+.account-page .account-eyebrow { margin: 18px 0 0; color: var(--taller-primary); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.account-eyebrow + h1 { margin-top: 6px; }
+.auth-card .access-denied-mobile { display: none; }
+@media (max-width: 639px) {
+  .access-denied .auth-identity, .access-denied .auth-badge, .auth-card .access-denied-desktop { display: none; }
+  .auth-card .access-denied-mobile { display: inline-flex; }
+  .auth-card .access-denied-panel { display: block; width: 100%; }
+  .access-denied-panel .alert p { margin-top: 4px; }
+  .access-denied .auth-card { border: 0; background: transparent; margin: 0; padding: 10px 0 60px; }
+}
+@media (min-width: 900px) {
+  .workspace-layout:has(.access-denied) { display: block; }
+  .workspace-layout:has(.access-denied) :is(.home-sidebar, .topbar) { display: none; }
+  .workspace-layout main.account-page { margin-left: 0; padding: 32px; }
+}
 .home-content { display: grid; gap: 14px; padding: 18px 14px; }
 .home-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .home-heading h1 { margin: 0 0 4px; }
@@ -265,3 +331,25 @@ main.more-page { max-width: 760px; margin: 0; padding: 22px 16px 18px; }
     height: 18px;
   }
 }
+.settings-grid { display: grid; gap: 20px; align-items: start; }
+.settings-card { min-width: 0; margin: 0 0 18px; padding: 20px; border: 1px solid var(--taller-line); border-radius: 12px; background: white; display: grid; gap: 16px; }
+.settings-card legend { padding: 0 6px; }
+.settings-card textarea { width: 100%; min-height: 90px; padding: 12px; border: 1px solid var(--taller-line); border-radius: 8px; font: inherit; resize: vertical; }
+.numbering-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.logo-card { max-width: 700px; }
+@media (min-width: 900px) { .settings-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); } }
+.settings-title-desktop { display: none; }
+.settings-card textarea:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+.settings-card textarea[aria-invalid="true"] { border-color: #b34135; }
+@media (min-width: 900px) {
+  .settings-title-desktop { display: inline; }
+  .settings-title-mobile { display: none; }
+  .workspace-home main.workshop-settings { max-width: 1200px; padding: 0 32px 48px; }
+}
+.workshop-settings { font-size: 14px; line-height: 20px; }
+.workshop-settings .field > label, .workshop-settings label.field { font-size: 12px; line-height: 17px; font-weight: 600; }
+.workshop-settings :is(input, textarea) { font-size: 14px; line-height: 20px; font-weight: 400; }
+.workshop-settings .settings-card { padding: 16px; }
+.workshop-settings .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.workshop-settings .button-link { justify-self: start; }
+@media (max-width: 899px) { .workspace-home main.workshop-settings { margin-top: 20px; } }

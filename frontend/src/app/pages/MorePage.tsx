@@ -27,11 +27,12 @@ export function MorePage() {
       <h1>Más</h1>
       <p>Accedé a los módulos del taller.</p>
       <ul className="more-modules" aria-label="Módulos del taller">
+        <li><Link className="more-module" to="/perfil"><ModuleLabel title="Mi perfil" description="Cuenta e inicio de sesión" /></Link></li>
         {modules.map(([title, description]) => (
           <li key={title}><div className="more-module" aria-disabled="true"><ModuleLabel title={title} description={description} /></div></li>
         ))}
         <li>
-          {me?.role === 'OWNER'
+          {me?.permissions.includes('settings.read')
             ? <Link className="more-module" to="/configuracion">{settings}</Link>
             : <div className="more-module" aria-disabled="true">{settings}</div>}
         </li>

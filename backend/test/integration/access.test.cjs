@@ -252,6 +252,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal(me.role, 'RECEPTION');
       assert.equal(me.workshop.name, 'Taller ficticio Norte');
       assert.equal((await new Browser(api).post('/invitations/accept', { token, name: 'Otra vez', password: PASSWORD })).status, 400, 'usada');
+      assert.equal((await new Browser(api).post('/invitations/preview', { token })).body.code, 'INVITATION_USED');
 
       // El taller no puede venir del pedido: un campo extra se rechaza.
       await ownerA.post('/invitations', { email: 'mecanico.norte@example.invalid', role: 'MECHANIC' });
@@ -285,6 +286,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
         data: { createdAt: new Date(now - 4 * 86400000), expiresAt: new Date(now - 86400000) },
       });
       assert.equal((await new Browser(api).post('/invitations/accept', { token: expiredToken, name: 'Vencida', password: PASSWORD })).status, 400);
+      assert.equal((await new Browser(api).post('/invitations/preview', { token: expiredToken })).body.code, 'INVITATION_EXPIRED');
 
       // Ya forma parte del taller / pertenece a otro taller sin revelarlo a quien invita.
       assert.equal((await ownerA.post('/invitations', { email: 'recepcion.norte@example.invalid', role: 'MECHANIC' })).body.code, 'ALREADY_MEMBER');
@@ -382,7 +384,8 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
     await t.test('las respuestas no exponen contraseñas, hashes ni tokens', async () => {
       const bodies = [(await ownerA.get('/auth/me')).text, (await ownerA.get('/employees')).text, (await ownerA.get('/invitations')).text];
       for (const body of bodies) {
-        assert.ok(!/argon2|password|tokenHash|token_hash/i.test(body));
+        assert.ok(!/argon2|"(?:password|passwordHash|password_hash|token|tokenHash|token_hash)"\s*:/i.test(body));
+        assert.ok(!body.includes(PASSWORD));
       }
       const stored = await prisma.credential.findMany();
       assert.ok(stored.every(c => c.passwordHash.startsWith('$argon2id$') && !c.passwordHash.includes(PASSWORD)));

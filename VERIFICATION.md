@@ -156,7 +156,7 @@ Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atad
 | Corrección | El intento guarda `sesion_id` (migración `202611180001_google_link_session`). El callback exige esa sesión exacta, y el vínculo se guarda en una transacción que relee la sesión y la pertenencia con `FOR SHARE`. Los tres casos responden `/login?google=invalid` y no guardan vínculo. |
 | Comprobaciones | `pnpm --filter backend test:data`: 63/63 en tres corridas consecutivas. **Clon limpio (`3229d93`):** `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` y `git diff --check` aprobados; `pnpm test` frontend 26/26 y backend 13/13; `test:data` 63/63. **Docker:** recorrido real en un proyecto descartable 19/19, eliminado al terminar; corrió con la base en 5434 y Mailpit en 8026 porque otro proyecto local ocupaba 5433 y 8025. |
 
-## Completar las verificaciones pendientes
+## Verificaciones de TS-21
 
 ### Integración de main en TS-21 — 18 de noviembre de 2026
 
@@ -173,3 +173,21 @@ Pasaron `pnpm build`, las 27 pruebas del frontend, las 13 del backend (con permi
 5. Seguir «Caída y recuperación» del README: detener PostgreSQL, comprobar 503 y pantalla de error; iniciarlo y comprobar 200 sin reconstruir ni reiniciar API. Probar también la API detenida.
 6. Seguir «Persistencia real en un entorno descartable» del README con el proyecto aislado `talleres-persistencia`: insertar `406`, ejecutar `down`, levantar otra vez, consultar el dato y eliminar la tabla de prueba.
 7. Registrar resultados reales aquí. Hasta entonces, esta entrega tiene código y pruebas automatizadas aprobadas, pero la aceptación de integración Docker/PostgreSQL sigue pendiente.
+
+### Integración frontend AUTH-05 y AUTH-07 — 18 de noviembre de 2026
+
+- Figma MCP: acceso confirmado al archivo original. Se consultaron contexto y capturas de los frames 14:156 y 31:364 (recuperación), 12:802 y 31:418 (configuración). Referencias en el README. No se adjuntó a una tarjeta externa: se recibió el enlace de Figma, sin enlace o identificador de la tarjeta.
+- Frontend: 38/38 pruebas Vitest + Testing Library. Las nuevas pruebas verifican solicitud y errores de recuperación, confirmación de contraseña, token usado/vencido, contrato completo comercial, error de numeración sin pérdida de datos, permisos de lectura/escritura y multipart del logo sin descartar ediciones pendientes. El equipo también respeta permisos individuales y evita consultar invitaciones sin autorización.
+- Compilación: `pnpm build` aprobado para ambos paquetes; `pnpm --filter frontend build` y typecheck aprobados tras los cambios de permisos. ESLint sobre `frontend/src` aprobado. `git diff --check` sin errores.
+- Integración real: proyecto Compose aislado `talleres-ts21-verificacion`, API Nest, PostgreSQL y Mailpit. Se aplicaron las migraciones pendientes solo en esa base descartable; no en la base de desarrollo. `GET /api/health` devolvió 200 y el contrato correcto.
+- Chrome automatizado, 1440×1000 y 390×844, sin reemplazar respuestas de API: alta con teléfono/localidad/dirección, verificación desde Mailpit, login y Home; guardado comercial y consulta tras recarga; numeración que no retrocede; carga, lectura privada y eliminación de logo; invitación y aceptación por email; cambio de rol, baja, rechazo de cuenta desactivada, reactivación y denegación de configuración para otro rol; invitación usada; recuperación desde Mailpit, cambio de contraseña, invalidación de sesiones, rechazo del enlace usado y login con la contraseña nueva. 17 verificaciones completas correctas. Capturas locales en `tmp/ts21-browser/integracion-*.png` y resultado en `integration-result.json` (artefactos ignorados).
+- Se revisaron las capturas de recuperación y configuración en escritorio y móvil; se ajustaron tipografía de campos, distribución y ausencia de desborde horizontal. Se conservan los estados sin datos operativos de EP-08 y los cambios visuales pedidos previamente. Google continúa como botón deshabilitado por indicación del usuario.
+- Al terminar se detuvo únicamente el proyecto de verificación, conservando sus volúmenes. No se ejecutó CI remoto, ni se hizo push o merge de esta integración frontend.
+
+### TS-21 · Registro con Google y pantallas de Acceso y cuenta — 18 de noviembre de 2026
+
+- Figma: revisados los frames de la sección de escritorio `55:373` y las pantallas móviles correspondientes. El formulario de Google usa los frames `102:336` y `104:147`. El registro por email conserva la elección de contraseña después de verificar el buzón.
+- Chrome a 1440 y 390 px con respuestas de API simuladas: botones de Google en ingreso y registro, navegación y creación del taller, perfil, confirmación de cierre, recuperación, invitación válida, vencida y usada, sesión vencida, baja y acceso denegado. Se verificaron la carga del ícono de Figma a 18 × 18 px y el formulario sin desborde horizontal.
+- Frontend: 45/45 pruebas y compilación de Vite con chequeo de tipos. Backend: 13/13 pruebas en Docker y 65/65 pruebas de integración con PostgreSQL descartable. El intercambio de red con Google fue simulado. Se comprobó que confirmaciones simultáneas crean un solo taller, con configuración, numeración y sesión, y que una cuenta existente conserva su vínculo original.
+- Compose local: aplicada `202611180003_google_registration` y recreada la API. Salud HTTP 200 con PostgreSQL. Los dos botones devolvieron a su pantalla de origen con el aviso `google=unavailable` cuando faltan las credenciales.
+- Pendiente: configurar las dos variables OAuth de Google y probar ingreso y registro con una cuenta real. Los pasos están en el README.

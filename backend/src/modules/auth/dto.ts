@@ -13,17 +13,11 @@ export class EmailField {
   email!: string;
 }
 
-// Sin contraseña: se elige al abrir el enlace del email (revisión de TS-19).
-export class RegisterDto extends EmailField {
+export class WorkshopRegistrationDto {
   @Transform(({ value }: { value: unknown }) => trimText(value))
   @IsString({ message: 'Ingresá el nombre del taller.' })
   @Length(2, 160, { message: 'El nombre del taller debe tener entre 2 y 160 caracteres.' })
   workshopName!: string;
-
-  @Transform(({ value }: { value: unknown }) => trimText(value))
-  @IsString({ message: 'Ingresá tu nombre.' })
-  @Length(2, 160, { message: 'Tu nombre debe tener entre 2 y 160 caracteres.' })
-  ownerName!: string;
 
   @Transform(({ value }: { value: unknown }) => trimText(value))
   @IsOptional()
@@ -40,6 +34,19 @@ export class RegisterDto extends EmailField {
   @IsOptional()
   @Length(2, 300, { message: 'Ingresá una dirección de entre 2 y 300 caracteres.' })
   address?: string;
+}
+
+// Sin contraseña: se elige al abrir el enlace del email (revisión de TS-19).
+export class RegisterDto extends WorkshopRegistrationDto {
+  @Transform(({ value }: { value: unknown }) => normalizeEmail(value))
+  @MaxLength(254, { message: EMAIL })
+  @IsEmail({}, { message: EMAIL })
+  email!: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsString({ message: 'Ingresá tu nombre.' })
+  @Length(2, 160, { message: 'Tu nombre debe tener entre 2 y 160 caracteres.' })
+  ownerName!: string;
 }
 
 export class LoginDto extends EmailField {

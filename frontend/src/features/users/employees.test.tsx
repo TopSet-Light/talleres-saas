@@ -82,8 +82,10 @@ it('si la sesión vence durante una acción, vuelve al login', async () => {
   const router = renderAt('/empleados');
   fireEvent.click(within(await screen.findByText('Mecánico Norte').then(el => el.closest('li') as HTMLElement)).getByRole('button', { name: 'Desactivar acceso' }));
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }));
+  expect(await screen.findByRole('heading', { name: 'Tu sesión venció' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/sesion-vencida');
+  fireEvent.click(screen.getByRole('link', { name: 'Iniciar sesión' }));
   expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
-  expect(screen.getByText(/Tu sesión venció/)).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/login');
 });
 
@@ -99,4 +101,17 @@ it('muestra error de carga y permite reintentar', async () => {
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Dueña Norte (vos)')).toBeInTheDocument();
+});
+
+it('un permiso de lectura no habilita invitaciones ni cambios del equipo', async () => {
+  const api = mockApi({
+    'GET /api/auth/me': () => json(200, { ...owner, permissions: ['employees.read'] }),
+    'GET /api/employees': () => json(200, [self, mechanic]),
+  });
+  renderAt('/empleados');
+  await screen.findByText('Mecánico Norte');
+  expect(screen.getByLabelText('Rol de Mecánico Norte')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Enviar invitación' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Desactivar acceso' })).not.toBeInTheDocument();
+  expect(calls(api, 'GET /api/invitations')).toHaveLength(0);
 });

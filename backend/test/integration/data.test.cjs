@@ -54,7 +54,7 @@ test('punto 07: migraciones e integridad en PostgreSQL real', async t => {
       const migrations = await prisma.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`;
       assert.deepEqual(migrations.map(row => row.migration_name), [
         first, second, third, fourth, fifth, '202611130001_registration_contact',
-        '202611130002_registration_address', sixth, seventh, '202611180002_merge_registration_contact',
+        '202611130002_registration_address', sixth, seventh, '202611180002_merge_registration_contact', '202611180003_google_registration',
       ]);
     });
 

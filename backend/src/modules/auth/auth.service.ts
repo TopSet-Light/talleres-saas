@@ -9,7 +9,7 @@ import { MailService } from '../../mail/mail.service';
 import { EMAILS_PER_RECIPIENT_PER_HOUR, lockRecipient, ONE_HOUR_MS } from '../../common/email-quota';
 import { hashToken, newToken } from '../../common/tokens';
 import { Access } from './access';
-import { CompleteRegistrationDto, LoginDto, RegisterDto } from './dto';
+import { CompleteRegistrationDto, LoginDto, RegisterDto, WorkshopRegistrationDto } from './dto';
 import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordService } from './password.service';
 import { permissionsFor } from './permissions';
@@ -45,6 +45,33 @@ export function toMe(access: Access) {
     role: access.role,
     permissions: permissionsFor(access.role),
   };
+}
+
+export async function createWorkshopOwner(tx: Prisma.TransactionClient, details: {
+  workshopName: string;
+  ownerName: string;
+  email: string;
+  contactPhone?: string | null;
+  locality?: string | null;
+  address?: string | null;
+  legacyCountry?: string | null;
+}) {
+  const { workshopName, ownerName, email, contactPhone, locality, address, legacyCountry } = details;
+  const workshop = await tx.workshop.create({ data: { name: workshopName, contactPhone, locality, address, legacyCountry } });
+  const user = await tx.user.create({ data: { email, name: ownerName } });
+  await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });
+  await initializeWorkshopSettings(tx, workshop.id, details);
+  return { workshop, user };
+}
+
+export function requireWorkshopContact(dto: WorkshopRegistrationDto) {
+  const fields: Record<string, string> = {};
+  if (!dto.contactPhone) fields.contactPhone = 'Ingresá el teléfono de contacto.';
+  if (!dto.locality) fields.locality = 'Ingresá la localidad o ciudad del taller.';
+  if (!dto.address) fields.address = 'Ingresá la dirección del taller.';
+  if (Object.keys(fields).length) {
+    throw new BadRequestException({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'Revisá los datos ingresados.', fields });
+  }
 }
 
 @Injectable()
@@ -115,24 +142,14 @@ export class AuthService {
     const passwordHash = await this.passwords.hash(dto.password);
     try {
       await this.prisma.$transaction(async tx => {
+        await lockRecipient(tx, 'registro', pending.email);
         // Condicional: dos usos simultáneos del mismo enlace no pasan ambos.
         const used = await tx.pendingRegistration.updateMany({
           where: { id: pending.id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },
         });
         if (used.count !== 1) throw new BadRequestException(INVALID_REGISTRATION);
-        const workshop = await tx.workshop.create({
-          data: {
-            name: pending.workshopName,
-            contactPhone: pending.contactPhone,
-            legacyCountry: pending.legacyCountry,
-            locality: pending.locality,
-            address: pending.address,
-          },
-        });
-        const user = await tx.user.create({ data: { email: pending.email, name: pending.ownerName } });
+        const { user } = await createWorkshopOwner(tx, pending);
         await tx.credential.create({ data: { userId: user.id, passwordHash, emailVerifiedAt: now } });
-        await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });
-        await initializeWorkshopSettings(tx, workshop.id, pending);
         await tx.pendingRegistration.updateMany({ where: { email: pending.email, usedAt: null }, data: { usedAt: now } });
       });
     } catch (error) {
