@@ -2,6 +2,10 @@ import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { calls, json, mockApi, owner, renderAt } from '../../test-utils';
 
+// jsdom no implementa el comportamiento modal del navegador.
+HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const self = { id: 'm1', name: 'Dueña Norte', email: 'duena@example.invalid', role: 'OWNER', status: 'ACTIVE', createdAt: '2026-11-09T12:00:00.000Z', isCurrentUser: true };
@@ -25,6 +29,8 @@ it('lista el equipo, sin acciones sobre la propia cuenta, y desactiva un acceso'
   expect(within(rowOf('Dueña Norte (vos)')).queryByRole('button')).not.toBeInTheDocument();
 
   fireEvent.click(within(rowOf('Mecánico Norte')).getByRole('button', { name: 'Desactivar acceso' }));
+  expect(calls(fetchMock, 'PATCH /api/employees/m2')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }));
   expect(await screen.findByText('Desactivaste el acceso de Mecánico Norte.')).toBeInTheDocument();
   expect(await screen.findByText('Acceso desactivado')).toBeInTheDocument();
   expect(calls(fetchMock, 'PATCH /api/employees/m2')).toEqual([{ status: 'INACTIVE' }]);
@@ -61,7 +67,7 @@ it('invita con rol y muestra el error de la API', async () => {
 it('un rol sin permiso no ve la pantalla ni consulta empleados', async () => {
   const fetchMock = mockApi({ 'GET /api/auth/me': () => json(200, { ...owner, role: 'MECHANIC', permissions: ['workOrders.diagnose'] }) });
   renderAt('/empleados');
-  expect(await screen.findByRole('heading', { name: 'Sin permiso' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Acceso denegado' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Empleados' })).not.toBeInTheDocument();
   expect(calls(fetchMock, 'GET /api/employees')).toHaveLength(0);
 });
@@ -75,7 +81,11 @@ it('si la sesión vence durante una acción, vuelve al login', async () => {
   });
   const router = renderAt('/empleados');
   fireEvent.click(within(await screen.findByText('Mecánico Norte').then(el => el.closest('li') as HTMLElement)).getByRole('button', { name: 'Desactivar acceso' }));
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }));
+  expect(await screen.findByRole('heading', { name: 'Tu sesión venció' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/sesion-vencida');
+  fireEvent.click(screen.getByRole('link', { name: 'Iniciar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/login');
 });
 
@@ -91,4 +101,17 @@ it('muestra error de carga y permite reintentar', async () => {
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Dueña Norte (vos)')).toBeInTheDocument();
+});
+
+it('un permiso de lectura no habilita invitaciones ni cambios del equipo', async () => {
+  const api = mockApi({
+    'GET /api/auth/me': () => json(200, { ...owner, permissions: ['employees.read'] }),
+    'GET /api/employees': () => json(200, [self, mechanic]),
+  });
+  renderAt('/empleados');
+  await screen.findByText('Mecánico Norte');
+  expect(screen.getByLabelText('Rol de Mecánico Norte')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Enviar invitación' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Desactivar acceso' })).not.toBeInTheDocument();
+  expect(calls(api, 'GET /api/invitations')).toHaveLength(0);
 });

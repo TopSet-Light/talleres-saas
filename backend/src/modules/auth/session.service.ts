@@ -26,9 +26,7 @@ export class SessionService {
    * transacción ve el cambio y no crea la sesión (revisión de TS-20).
    */
   async create(userId: string, now = new Date(), guard?: { passwordHash?: string }) {
-    const token = newToken();
-    const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
-    await this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async tx => {
       if (guard) {
         if (guard.passwordHash !== undefined) {
           const credential = await tx.$queryRaw<{ password_hash: string }[]>`
@@ -39,12 +37,18 @@ export class SessionService {
           SELECT status::text AS status FROM pertenencia WHERE usuario_id = ${userId}::uuid FOR SHARE`;
         if (membership[0]?.status !== 'ACTIVE') throw new StaleAccessError();
       }
-      await tx.session.create({
-        data: {
-          tokenHash: hashToken(token), userId, createdAt: now, lastSeenAt: now,
-          idleExpiresAt: new Date(now.getTime() + SESSION_IDLE_MS), expiresAt,
-        },
-      });
+      return this.issue(tx, userId, now);
+    });
+  }
+
+  async issue(tx: Tx, userId: string, now: Date) {
+    const token = newToken();
+    const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
+    await tx.session.create({
+      data: {
+        tokenHash: hashToken(token), userId, createdAt: now, lastSeenAt: now,
+        idleExpiresAt: new Date(now.getTime() + SESSION_IDLE_MS), expiresAt,
+      },
     });
     return { token, expiresAt };
   }

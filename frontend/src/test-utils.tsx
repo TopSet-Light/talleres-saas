@@ -15,7 +15,7 @@ export const owner = {
   user: { id: 'u1', name: 'Dueña Norte', email: 'duena@example.invalid' },
   workshop: { id: 'w1', name: 'Taller ficticio Norte' },
   role: 'OWNER',
-  permissions: ['employees.read', 'employees.invite', 'employees.changeRole', 'employees.deactivate'],
+  permissions: ['settings.read', 'settings.manage', 'employees.read', 'employees.invite', 'employees.changeRole', 'employees.deactivate'],
 };
 
 type Handler = (body: unknown) => Response | Promise<Response>;
@@ -25,7 +25,7 @@ export function mockApi(handlers: Record<string, Handler>) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const handler = handlers[`${init?.method ?? 'GET'} ${url}`];
     if (!handler) throw new TypeError(`Sin respuesta simulada para ${init?.method ?? 'GET'} ${url}`);
-    return handler(init?.body ? JSON.parse(String(init.body)) : undefined);
+    return handler(init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined);
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;

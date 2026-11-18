@@ -16,7 +16,7 @@ async function seedDemo(prisma) {
   await prisma.$transaction(async tx => {
     // Repetible y no destructivo: no restablece registros existentes.
     for (const [id, name] of [[ids.workshopA, 'Taller ficticio A'], [ids.workshopB, 'Taller ficticio B']]) {
-      await tx.workshop.upsert({ where: { id }, update: {}, create: { id, name } });
+      await tx.workshop.upsert({ where: { id }, update: {}, create: { id, name }, select: { id: true } });
     }
     const accounts = [
       [ids.ownerA, ids.workshopA, 'OWNER', 'dueno-a@example.invalid'],

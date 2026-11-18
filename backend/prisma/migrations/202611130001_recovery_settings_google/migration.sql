@@ -9,7 +9,7 @@ CREATE TYPE "DocumentKind" AS ENUM ('WORK_ORDER', 'ESTIMATE');
 
 -- AlterTable
 ALTER TABLE "registro_pendiente" ADD COLUMN     "domicilio" VARCHAR(300),
-ADD COLUMN     "localidad" VARCHAR(120),
+ADD COLUMN IF NOT EXISTS "localidad" VARCHAR(120),
 ADD COLUMN     "telefono" VARCHAR(40);
 
 -- CreateTable

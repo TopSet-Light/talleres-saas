@@ -61,6 +61,13 @@
 - **Configuración:** `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`, juntos u omitidos. Sin ellos la función queda deshabilitada y `GET /api/auth/options` lo informa.
 - **Pruebas:** usan un Google simulado que solo reemplaza el intercambio de red. Probar con Google real requiere crear el cliente OAuth (pendiente).
 
+### Registro y pantallas de TS-21
+
+- La pantalla de ingreso usa el flujo de cuentas vinculadas. La pantalla de registro inicia un intento con intención de alta almacenada en la API. Una identidad ya vinculada inicia sesión en ambos recorridos.
+- Para un `sub` nuevo, Google debe acreditar el control del buzón de Gmail o Workspace. Las cuentas de Google con buzón externo pueden registrarse con un enlace por email y vincularse desde **Mi perfil**. El email de Google nunca vincula una cuenta local existente.
+- Después de volver de Google, `/registro/google` valida una cookie `HttpOnly` de 30 minutos y pide los datos del taller. El token se guarda como hash en `registro_google`. Confirmar consume ese registro y crea taller, dueño, configuración, numeración, identidad y sesión en la misma transacción. Las restricciones únicas siguen protegiendo el email y el `sub` frente a altas simultáneas.
+- Una cuenta creada con Google puede configurar una contraseña mediante un enlace de recuperación. La API exige una contraseña verificada antes de permitir desvincular Google.
+
 ## 7. Sesiones y restablecimientos simultáneos (revisión del PR #6)
 
 - **Login con la contraseña anterior:** un login que ya verificó la contraseña anterior podía crear su sesión después de que un restablecimiento revocara las sesiones. Ahora la sesión se crea en una transacción que vuelve a leer la contraseña y la pertenencia con `FOR SHARE`:
@@ -76,6 +83,5 @@
 ## Pendiente
 
 - Probar el ingreso con un cliente OAuth real de Google.
-- Conectar el frontend de TS-21: recuperación, configuración, `/auth/options`, `/login?google=…` y subida del logo.
 - Limpieza periódica de intentos de Google y enlaces vencidos (no afecta la seguridad: se rechazan por fecha).
 - Backups del volumen de archivos (TEC-09).
