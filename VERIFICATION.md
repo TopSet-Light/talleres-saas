@@ -147,7 +147,7 @@ Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atad
 | --- | --- |
 | Falla reproducida | Prueba de integración nueva con tres casos. Contra el código anterior, sin la migración nueva, los tres guardaban el vínculo (`?google=linked`). Los casos: cerrar sesión y volver a entrar con la misma cuenta antes del callback; cerrar sesión mientras la API habla con Google; restablecer la contraseña en ese intercambio. |
 | Corrección | El intento guarda `sesion_id` (migración `202611180001_google_link_session`). El callback exige esa sesión exacta, y el vínculo se guarda en una transacción que relee la sesión y la pertenencia con `FOR SHARE`. Los tres casos responden `/login?google=invalid` y no guardan vínculo. |
-| Comprobaciones | `pnpm build` aprobado. `pnpm test` del backend: 13/13. `pnpm --filter backend test:data`: 63/63 en tres corridas consecutivas. La verificación desde un clon limpio y el recorrido en Docker se registran abajo. |
+| Comprobaciones | `pnpm --filter backend test:data`: 63/63 en tres corridas consecutivas. **Clon limpio (`3229d93`):** `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` y `git diff --check` aprobados; `pnpm test` frontend 26/26 y backend 13/13; `test:data` 63/63. **Docker:** recorrido real en un proyecto descartable 19/19, eliminado al terminar; corrió con la base en 5434 y Mailpit en 8026 porque otro proyecto local ocupaba 5433 y 8025. |
 
 ## Completar las verificaciones pendientes
 
