@@ -91,7 +91,7 @@ export class AuthController {
   @Get('google/link/start')
   @UseGuards(AccessGuard, ThrottlerGuard)
   async googleLinkStart(@CurrentAccess() access: Access, @Res() res: Response) {
-    this.redirectToGoogle(res, await this.googleAuth.start(new Date(), access.userId));
+    this.redirectToGoogle(res, await this.googleAuth.start(new Date(), { userId: access.userId, sessionId: access.sessionId }));
   }
 
   @Delete('google/link')

@@ -50,9 +50,10 @@ export class GoogleAuthService {
 
   /**
    * Crea el intento y devuelve la URL de Google y el state que se ata al navegador por cookie.
-   * Con `linkUserId` es una vinculación: solo la puede completar la misma sesión.
+   * Con `link` es una vinculación: guarda la sesión exacta que la inicia, y solo esa sesión,
+   * todavía vigente, la puede completar.
    */
-  async start(now = new Date(), linkUserId?: string) {
+  async start(now = new Date(), link?: { userId: string; sessionId: string }) {
     if (!this.google.isEnabled()) {
       throw new NotFoundException({ statusCode: 404, code: 'GOOGLE_DISABLED', message: 'El ingreso con Google no está habilitado.' });
     }
@@ -62,7 +63,7 @@ export class GoogleAuthService {
     const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
     await this.prisma.googleLoginAttempt.create({
       data: {
-        stateHash: hashToken(state), nonce, codeVerifier, userId: linkUserId ?? null,
+        stateHash: hashToken(state), nonce, codeVerifier, userId: link?.userId ?? null, sessionId: link?.sessionId ?? null,
         createdAt: now, expiresAt: new Date(now.getTime() + GOOGLE_ATTEMPT_TTL_MS),
       },
     });
@@ -87,10 +88,11 @@ export class GoogleAuthService {
     });
     if (used.count !== 1) throw new GoogleLoginError('invalid');
 
-    // Una vinculación solo la completa la misma sesión con contraseña que la inició.
+    // Una vinculación solo la completa la misma sesión que la inició: se compara la sesión, no el
+    // usuario. Volver a iniciar sesión con la misma cuenta crea otra sesión y no alcanza.
     if (attempt.userId) {
       const access = await this.sessions.resolve(sessionToken, now);
-      if (!access || access.userId !== attempt.userId) throw new GoogleLoginError('invalid');
+      if (!access || !attempt.sessionId || access.sessionId !== attempt.sessionId) throw new GoogleLoginError('invalid');
     }
     const destination = attempt.userId ? 'home' : 'login';
     if (query.error !== undefined) throw new GoogleLoginError('cancelled', destination);
@@ -106,8 +108,8 @@ export class GoogleAuthService {
     if (profile.nonce !== attempt.nonce) throw new GoogleLoginError('invalid', destination);
     if (!profile.emailVerified) throw new GoogleLoginError('unverified', destination);
 
-    if (attempt.userId) {
-      await this.link(attempt.userId, profile.subject);
+    if (attempt.userId && attempt.sessionId) {
+      await this.link({ userId: attempt.userId, sessionId: attempt.sessionId }, profile.subject, now);
       return { mode: 'link' as const };
     }
     const identity = await this.prisma.googleIdentity.findUnique({ where: { subject: profile.subject } });
@@ -122,20 +124,38 @@ export class GoogleAuthService {
     }
   }
 
-  /** Una cuenta de Google se vincula a un solo usuario, y un usuario a una sola cuenta de Google. */
-  private async link(userId: string, subject: string) {
-    const existing = await this.prisma.googleIdentity.findFirst({ where: { OR: [{ userId }, { subject }] } });
-    if (existing) {
-      if (existing.userId === userId && existing.subject === subject) return;
-      throw new GoogleLoginError('conflict', 'home');
-    }
+  /**
+   * Guarda el vínculo en una transacción que vuelve a comprobar, con bloqueos compartidos (FOR
+   * SHARE), que la sesión que inició la vinculación siga vigente y la pertenencia activa. La
+   * comprobación del callback ocurre antes de hablar con Google; si en ese intercambio se cierra
+   * la sesión, se restablece la contraseña o se da de baja la cuenta, acá se detecta y no se
+   * vincula. Si esas operaciones llegan después, esperan a que termine esta transacción
+   * (segunda revisión de TS-20). Una cuenta de Google por usuario y un usuario por cuenta.
+   */
+  private async link(origin: { userId: string; sessionId: string }, subject: string, now: Date) {
+    const { userId, sessionId } = origin;
     try {
-      await this.prisma.googleIdentity.create({ data: { userId, subject } });
+      await this.prisma.$transaction(async tx => {
+        const session = await tx.$queryRaw<{ vigente: boolean }[]>`
+          SELECT (revocada_at IS NULL AND expira_at > ${now} AND expira_inactividad_at > ${now}
+                  AND usuario_id = ${userId}::uuid) AS vigente
+          FROM sesion WHERE id = ${sessionId}::uuid FOR SHARE`;
+        if (!session[0]?.vigente) throw new GoogleLoginError('invalid');
+        const membership = await tx.$queryRaw<{ status: string }[]>`
+          SELECT status::text AS status FROM pertenencia WHERE usuario_id = ${userId}::uuid FOR SHARE`;
+        if (membership[0]?.status !== 'ACTIVE') throw new GoogleLoginError('disabled');
+        const existing = await tx.googleIdentity.findFirst({ where: { OR: [{ userId }, { subject }] } });
+        if (existing) {
+          if (existing.userId === userId && existing.subject === subject) return;
+          throw new GoogleLoginError('conflict', 'home');
+        }
+        await tx.googleIdentity.create({ data: { userId, subject } });
+      });
     } catch (error) {
       // Vinculación simultánea: si quedó la misma, es inocua; si no, es un conflicto.
       if (!isUniqueViolation(error)) throw error;
-      const now = await this.prisma.googleIdentity.findUnique({ where: { userId } });
-      if (now?.subject !== subject) throw new GoogleLoginError('conflict', 'home');
+      const current = await this.prisma.googleIdentity.findUnique({ where: { userId } });
+      if (current?.subject !== subject) throw new GoogleLoginError('conflict', 'home');
     }
   }
 

@@ -139,6 +139,16 @@ Correcciones pedidas por Ezequiel-Cagolo. Para cada comentario se escribió prim
 | Recorrido real en Docker | Proyecto descartable desde el clon limpio, eliminado al terminar: 19/19 a través de Vite y Mailpit. |
 | Pendiente | **Google:** probar con un cliente OAuth real. **TS-21:** necesita el botón «Vincular con Google» (`/api/auth/google/link/start`) y los nuevos motivos (`not-linked`; `?google=linked` y `?google=conflict` en el inicio). Lo demás pendiente de TS-20 sigue igual. |
 
+## Segunda revisión del PR #6 (TS-20) — 18 de noviembre de 2026
+
+Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atada a la sesión que la inició, no solo al usuario, y comprobarse al guardar el vínculo.
+
+| Comprobación | Resultado y evidencia |
+| --- | --- |
+| Falla reproducida | Prueba de integración nueva con tres casos. Contra el código anterior, sin la migración nueva, los tres guardaban el vínculo (`?google=linked`). Los casos: cerrar sesión y volver a entrar con la misma cuenta antes del callback; cerrar sesión mientras la API habla con Google; restablecer la contraseña en ese intercambio. |
+| Corrección | El intento guarda `sesion_id` (migración `202611180001_google_link_session`). El callback exige esa sesión exacta, y el vínculo se guarda en una transacción que relee la sesión y la pertenencia con `FOR SHARE`. Los tres casos responden `/login?google=invalid` y no guardan vínculo. |
+| Comprobaciones | `pnpm build` aprobado. `pnpm test` del backend: 13/13. `pnpm --filter backend test:data`: 63/63 en tres corridas consecutivas. La verificación desde un clon limpio y el recorrido en Docker se registran abajo. |
+
 ## Completar las verificaciones pendientes
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
 const { PrismaClient } = require('@prisma/client');
-const { setup, Browser, registerOwner, inviteAndAccept } = require('./http-helpers.cjs');
+const { setup, Browser, tokenFrom, registerOwner, inviteAndAccept, PASSWORD } = require('./http-helpers.cjs');
 
 const CLIENT_ID = 'cliente-de-prueba.apps.googleusercontent.com';
 const { databaseUrl, startApi } = setup('google_login', { GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: 'secreto-de-prueba' });
@@ -20,6 +20,8 @@ function fakeGoogle() {
       exchanges.push({ code, codeVerifier });
       const profile = profiles.get(code);
       if (!profile) throw new Error('código desconocido');
+      // Permite simular algo que ocurre mientras la API habla con Google.
+      if (profile.during) await profile.during();
       return profile;
     };
   };
@@ -130,6 +132,44 @@ test('TS-20 · ingreso con Google para cuentas vinculadas en PostgreSQL real', a
       google.profiles.set('codigo-cerrado', { subject: 'google-sub-cerrado', email: 'x@example.invalid', emailVerified: true, nonce: closingLink.searchParams.get('nonce') });
       assert.equal(await finish(closing, { state: closingLink.searchParams.get('state'), code: 'codigo-cerrado' }), 'http://app.test/login?google=invalid');
       assert.equal(await prisma.googleIdentity.count({ where: { subject: { in: ['google-sub-robado', 'google-sub-cerrado'] } } }), 0);
+    });
+
+    await t.test('revisión: la vinculación queda atada a la sesión exacta y vigente que la inició', async () => {
+      // 1. Cerrar sesión y volver a entrar con la misma cuenta antes de volver de Google.
+      const { browser: relogin } = await registerOwner(api, { workshopName: 'Taller relogin', ownerName: 'Persona', email: 'relogin@example.invalid' });
+      const url = await start(relogin, '/auth/google/link/start');
+      assert.equal((await relogin.post('/auth/logout')).status, 204);
+      assert.equal((await relogin.post('/auth/login', { email: 'relogin@example.invalid', password: PASSWORD })).status, 200);
+      assert.ok(relogin.cookie.includes('taller_google_state='), 'mismo navegador, con la cookie del intento');
+      google.profiles.set('codigo-relogin', { subject: 'sub-relogin', email: 'x@example.invalid', emailVerified: true, nonce: url.searchParams.get('nonce') });
+      assert.equal(await finish(relogin, { state: url.searchParams.get('state'), code: 'codigo-relogin' }), 'http://app.test/login?google=invalid',
+        'otra sesión del mismo usuario no completa la vinculación');
+
+      // 2. Cerrar sesión mientras la API habla con Google.
+      const { browser: closing } = await registerOwner(api, { workshopName: 'Taller cierra', ownerName: 'Persona', email: 'cierra-durante@example.invalid' });
+      const closingSession = closing.cookie;
+      assert.equal(await link(google, closing, {
+        subject: 'sub-cierra-durante', email: 'x@example.invalid',
+        during: async () => {
+          const sameSession = new Browser(api);
+          sameSession.cookie = closingSession;
+          assert.equal((await sameSession.post('/auth/logout')).status, 204);
+        },
+      }), 'http://app.test/login?google=invalid');
+
+      // 3. Restablecer la contraseña mientras la API habla con Google.
+      const { browser: resetting } = await registerOwner(api, { workshopName: 'Taller restablece', ownerName: 'Persona', email: 'restablece-durante@example.invalid' });
+      assert.equal(await link(google, resetting, {
+        subject: 'sub-restablece-durante', email: 'x@example.invalid',
+        during: async () => {
+          await new Browser(api).post('/auth/password/forgot', { email: 'restablece-durante@example.invalid' });
+          const token = tokenFrom(api.outbox.at(-1));
+          assert.equal((await new Browser(api).post('/auth/password/reset', { token, password: 'contraseña nueva durante google' })).status, 200);
+        },
+      }), 'http://app.test/login?google=invalid');
+
+      assert.equal(await prisma.googleIdentity.count({ where: { subject: { in: ['sub-relogin', 'sub-cierra-durante', 'sub-restablece-durante'] } } }), 0,
+        'ninguno de los tres casos guarda el vínculo');
     });
 
     await t.test('una cuenta de Google se vincula a un solo usuario y un usuario a una sola cuenta', async () => {

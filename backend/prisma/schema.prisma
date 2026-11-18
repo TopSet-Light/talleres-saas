@@ -155,15 +155,16 @@ model Credential {
 }
 
 model Session {
-  id            String    @id @default(uuid()) @db.Uuid
-  tokenHash     String    @unique @map("token_hash") @db.Char(64)
-  userId        String    @map("usuario_id") @db.Uuid
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  lastSeenAt    DateTime  @default(now()) @map("ultimo_uso_at") @db.Timestamptz(3)
-  idleExpiresAt DateTime  @map("expira_inactividad_at") @db.Timestamptz(3)
-  expiresAt     DateTime  @map("expira_at") @db.Timestamptz(3)
-  revokedAt     DateTime? @map("revocada_at") @db.Timestamptz(3)
-  user          User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id            String               @id @default(uuid()) @db.Uuid
+  tokenHash     String               @unique @map("token_hash") @db.Char(64)
+  userId        String               @map("usuario_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime             @default(now()) @map("ultimo_uso_at") @db.Timestamptz(3)
+  idleExpiresAt DateTime             @map("expira_inactividad_at") @db.Timestamptz(3)
+  expiresAt     DateTime             @map("expira_at") @db.Timestamptz(3)
+  revokedAt     DateTime?            @map("revocada_at") @db.Timestamptz(3)
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  googleLinks   GoogleLoginAttempt[]
 
   @@index([userId])
   @@map("sesion")
@@ -223,6 +224,9 @@ model GoogleLoginAttempt {
   id           String    @id @default(uuid()) @db.Uuid
   userId       String?   @map("usuario_id") @db.Uuid
   user         User?     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  // En una vinculación, la sesión exacta que la inició: solo esa sesión, vigente, la completa.
+  sessionId    String?   @map("sesion_id") @db.Uuid
+  session      Session?  @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   stateHash    String    @unique @map("state_hash") @db.Char(64)
   nonce        String    @db.VarChar(64)
   codeVerifier String    @map("code_verifier") @db.VarChar(128)
