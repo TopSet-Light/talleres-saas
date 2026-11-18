@@ -47,6 +47,8 @@ test('configuración: valores locales por defecto, Secure con https y errores si
   assert.equal(loadConfig({ APP_URL: 'https://taller.example', COOKIE_SECURE: 'false' }).cookieSecure, false);
   assert.throws(() => loadConfig({ APP_URL: 'javascript:alert(1)' }), /APP_URL/);
   assert.throws(() => loadConfig({ SMTP_PORT: 'x' }), /SMTP_PORT/);
+  assert.equal(local.googleClientId, undefined, 'Google deshabilitado por defecto');
+  assert.throws(() => loadConfig({ GOOGLE_CLIENT_SECRET: 'secreto-google' }), error => /GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET/.test(error.message) && !error.message.includes('secreto-google'));
 });
 
 test('SMTP: Mailpit sin credenciales en local y proveedor real con autenticación y TLS', () => {

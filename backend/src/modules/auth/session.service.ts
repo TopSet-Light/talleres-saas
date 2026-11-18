@@ -11,18 +11,40 @@ const TOUCH_EVERY_MS = 5 * 60 * 1000;
 
 type Tx = Prisma.TransactionClient;
 
+/** La contraseña o la pertenencia cambiaron mientras se iniciaba la sesión. */
+export class StaleAccessError extends Error {}
+
 @Injectable()
 export class SessionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, now = new Date()) {
+  /**
+   * Crea la sesión. Con `guard`, vuelve a comprobar dentro de la misma transacción que la
+   * contraseña verificada siga vigente y que la pertenencia siga activa, con bloqueos
+   * compartidos (FOR SHARE). Un restablecimiento o una baja que cambian esas filas esperan a que
+   * termine esta transacción y revocan la sesión recién creada; si ocurrieron antes, esta
+   * transacción ve el cambio y no crea la sesión (revisión de TS-20).
+   */
+  async create(userId: string, now = new Date(), guard?: { passwordHash?: string }) {
     const token = newToken();
     const expiresAt = new Date(now.getTime() + SESSION_MAX_MS);
-    await this.prisma.session.create({
-      data: {
-        tokenHash: hashToken(token), userId, createdAt: now, lastSeenAt: now,
-        idleExpiresAt: new Date(now.getTime() + SESSION_IDLE_MS), expiresAt,
-      },
+    await this.prisma.$transaction(async tx => {
+      if (guard) {
+        if (guard.passwordHash !== undefined) {
+          const credential = await tx.$queryRaw<{ password_hash: string }[]>`
+            SELECT password_hash FROM credencial WHERE usuario_id = ${userId}::uuid FOR SHARE`;
+          if (credential[0]?.password_hash !== guard.passwordHash) throw new StaleAccessError();
+        }
+        const membership = await tx.$queryRaw<{ status: string }[]>`
+          SELECT status::text AS status FROM pertenencia WHERE usuario_id = ${userId}::uuid FOR SHARE`;
+        if (membership[0]?.status !== 'ACTIVE') throw new StaleAccessError();
+      }
+      await tx.session.create({
+        data: {
+          tokenHash: hashToken(token), userId, createdAt: now, lastSeenAt: now,
+          idleExpiresAt: new Date(now.getTime() + SESSION_IDLE_MS), expiresAt,
+        },
+      });
     });
     return { token, expiresAt };
   }

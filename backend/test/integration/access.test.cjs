@@ -188,6 +188,17 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal((await browser.post('/auth/registration/complete', { token: first, password: PASSWORD })).status, 201);
     });
 
+    await t.test('AUTH-01: el límite por destinatario resiste pedidos simultáneos', async () => {
+      // Revisión de TS-19: con conteo e inserción separados, pedidos simultáneos superaban el límite.
+      const mails = api.outbox.length;
+      const responses = await Promise.all(Array.from({ length: 10 }, () => new Browser(api).post('/auth/register', {
+        workshopName: 'Taller concurrente', ownerName: 'Persona concurrente', email: 'concurrente@example.invalid',
+      })));
+      assert.ok(responses.every(response => response.status === 202), 'todos reciben la misma respuesta');
+      assert.equal(api.outbox.length - mails, 3, 'exactamente 3 emails');
+      assert.equal(await prisma.pendingRegistration.count({ where: { email: 'concurrente@example.invalid' } }), 3);
+    });
+
     await t.test('AUTH-02: errores genéricos, cookie protegida y cierre de sesión', async () => {
       const wrong = await new Browser(api).post('/auth/login', { email: 'duena.norte@example.invalid', password: 'contraseña equivocada' });
       const unknown = await new Browser(api).post('/auth/login', { email: 'nadie@example.invalid', password: 'contraseña equivocada' });

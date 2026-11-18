@@ -11,6 +11,9 @@ export const PERMISSIONS = {
   'employees.invite': ['OWNER'],
   'employees.changeRole': ['OWNER'],
   'employees.deactivate': ['OWNER'],
+  // AUTH-07 / CFG: datos comerciales, logo y numeración.
+  'settings.read': ['OWNER'],
+  'settings.manage': ['OWNER'],
   'customers.read': ['OWNER', 'RECEPTION', 'MECHANIC'],
   'customers.write': ['OWNER', 'RECEPTION'],
   'workOrders.open': ['OWNER', 'RECEPTION'],
