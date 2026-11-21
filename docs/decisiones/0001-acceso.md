@@ -68,9 +68,9 @@ El punto 07 dejó `taller`, `usuario` (email único y normalizado) y `pertenenci
 
 ## 6. Email
 
-- El envío se encapsula en un servicio de correo con transporte SMTP (`nodemailer`).
+- El envío se encapsula en un servicio de correo con transporte SMTP (`nodemailer`). TS-22 agrega el transporte Resend por API HTTPS en el mismo servicio.
 - **Desarrollo local:** servicio **Mailpit** en Docker Compose. Captura los correos sin enviarlos y los muestra en una interfaz web publicada solo en `127.0.0.1`.
-- **Staging y producción:** el proveedor real (SMTP o API) se elegirá al preparar staging, cambiando solo la configuración.
+- **Staging y producción:** TS-22 elige Resend por API HTTPS, activado por configuración. Se conserva SMTP como alternativa. Ver [configuración de Resend](../resend.md).
 - **Configuración nueva:** URL pública de la aplicación para armar los enlaces, servidor SMTP y remitente. Se documentan en `.env.example` sin valores secretos.
 
 ## 7. Invitaciones (AUTH-03)

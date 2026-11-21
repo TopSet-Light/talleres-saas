@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { isEmail } from 'class-validator';
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
@@ -9,6 +10,9 @@ export interface AppConfig {
   appOrigin: string;
   /** `Secure` en la cookie de sesión. Debe ser `true` fuera de desarrollo local. */
   cookieSecure: boolean;
+  mailTransport: 'smtp' | 'resend';
+  /** Secreto exclusivo del backend; solo se usa con el transporte Resend. */
+  resendApiKey?: string;
   smtpHost: string;
   smtpPort: number;
   /** TLS desde la conexión (puerto 465). Con `false` y credenciales, se exige STARTTLS. */
@@ -53,11 +57,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const cookieSecure = env.COOKIE_SECURE === undefined || env.COOKIE_SECURE === ''
     ? appOrigin.startsWith('https:')
     : env.COOKIE_SECURE === 'true';
+  const mailTransport = env.MAIL_TRANSPORT || 'smtp';
+  if (mailTransport !== 'smtp' && mailTransport !== 'resend') {
+    throw new Error('MAIL_TRANSPORT debe ser smtp o resend');
+  }
+  const resendApiKey = env.RESEND_API_KEY?.trim() || undefined;
+  const mailFrom = env.MAIL_FROM?.trim() || 'Gestión de talleres <no-responder@talleres.local>';
+  if (mailTransport === 'resend' && !resendApiKey) {
+    throw new Error('RESEND_API_KEY es obligatoria con MAIL_TRANSPORT=resend');
+  }
+  if (mailTransport === 'resend' || env.NODE_ENV === 'production') {
+    const sender = mailFrom.match(/^[^<>\r\n]+<([^<>\r\n]+)>$/)?.[1] || mailFrom;
+    if (!env.MAIL_FROM?.trim() || /[\r\n]/.test(mailFrom) || !isEmail(sender)) {
+      throw new Error('MAIL_FROM debe ser un remitente válido de un dominio verificado');
+    }
+    if (!env.APP_URL?.trim()) throw new Error('APP_URL es obligatoria para enviar correos reales');
+  }
+  if (env.NODE_ENV === 'production' && (!appOrigin.startsWith('https:') || !cookieSecure)) {
+    throw new Error('En producción APP_URL debe usar HTTPS y COOKIE_SECURE no puede ser false');
+  }
   const smtpPort = positiveInteger(env.SMTP_PORT, 1025, 'SMTP_PORT');
   const smtpUser = env.SMTP_USER || undefined;
   const smtpPassword = env.SMTP_PASSWORD || undefined;
   // El mensaje nunca incluye los valores: la contraseña no debe llegar a logs.
   if (Boolean(smtpUser) !== Boolean(smtpPassword)) throw new Error('SMTP_USER y SMTP_PASSWORD deben configurarse juntos');
+  if (env.NODE_ENV === 'production' && mailTransport === 'smtp' &&
+    (!env.SMTP_HOST || env.SMTP_HOST.toLowerCase() === 'mailpit' || !env.SMTP_PORT || !smtpUser)) {
+    throw new Error('En producción SMTP requiere SMTP_HOST, SMTP_PORT, SMTP_USER y SMTP_PASSWORD de un proveedor real');
+  }
   const googleClientId = env.GOOGLE_CLIENT_ID || undefined;
   const googleClientSecret = env.GOOGLE_CLIENT_SECRET || undefined;
   if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
@@ -67,6 +94,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     appUrl,
     appOrigin,
     cookieSecure,
+    mailTransport,
+    resendApiKey,
     smtpHost: env.SMTP_HOST || 'mailpit',
     smtpPort,
     smtpSecure: env.SMTP_SECURE === undefined || env.SMTP_SECURE === '' ? smtpPort === 465 : env.SMTP_SECURE === 'true',
@@ -74,7 +103,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtpPassword,
     googleClientId,
     googleClientSecret,
-    mailFrom: env.MAIL_FROM || 'Gestión de talleres <no-responder@talleres.local>',
+    mailFrom,
     authRateLimit: positiveInteger(env.AUTH_RATE_LIMIT, 10, 'AUTH_RATE_LIMIT'),
     trustProxyHops: integer(env.TRUST_PROXY_HOPS, 1, 'TRUST_PROXY_HOPS', 0),
     filesDir: resolve(env.FILES_DIR || 'data/files'),
