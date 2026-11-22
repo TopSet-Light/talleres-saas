@@ -54,10 +54,9 @@ export async function createWorkshopOwner(tx: Prisma.TransactionClient, details:
   contactPhone?: string | null;
   locality?: string | null;
   address?: string | null;
-  legacyCountry?: string | null;
 }) {
-  const { workshopName, ownerName, email, contactPhone, locality, address, legacyCountry } = details;
-  const workshop = await tx.workshop.create({ data: { name: workshopName, contactPhone, locality, address, legacyCountry } });
+  const { workshopName, ownerName, email } = details;
+  const workshop = await tx.workshop.create({ data: { name: workshopName } });
   const user = await tx.user.create({ data: { email, name: ownerName } });
   await tx.membership.create({ data: { workshopId: workshop.id, userId: user.id, role: 'OWNER' } });
   await initializeWorkshopSettings(tx, workshop.id, details);

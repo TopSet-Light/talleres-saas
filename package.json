@@ -7,7 +7,7 @@
     "test": "pnpm --filter frontend test && pnpm --filter backend test",
     "lint": "eslint .",
     "format": "prettier --write",
-    "format:check": "prettier --check"
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -162,7 +162,7 @@ Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atad
 
 Se integró main hasta `5f162ab`, conservando la interfaz de TS-21 y las correcciones de TS-20. El contrato de la API mantiene los datos de contacto opcionales para sus clientes anteriores. El formulario de TS-21 sigue solicitándolos.
 
-Ambas ramas agregaban localidad al registro pendiente. Se hizo idempotente esa adición en las dos migraciones para admitir instalaciones de cualquiera de las ramas. Una migración adicional copia los datos de contacto anteriores hacia las columnas y configuración comercial de TS-20, conservando los campos históricos.
+Ambas ramas agregaban localidad al registro pendiente. En esa integración se hizo idempotente la adición y se agregó una migración para copiar el contacto. **Ese enfoque queda sustituido por la revisión del PR #5 del 22 de noviembre, registrada al final:** se restaura la migración de main y se retiran las migraciones duplicadas exclusivas de TS-21.
 
 Pasaron `pnpm build`, las 27 pruebas del frontend, las 13 del backend (con permisos para HTTP local), las 63 de integración con PostgreSQL descartable y ESLint sobre el código de ambos paquetes. La base local de desarrollo queda pendiente de migrar.
 
@@ -191,3 +191,24 @@ Pasaron `pnpm build`, las 27 pruebas del frontend, las 13 del backend (con permi
 - Frontend: 45/45 pruebas y compilación de Vite con chequeo de tipos. Backend: 13/13 pruebas en Docker y 65/65 pruebas de integración con PostgreSQL descartable. El intercambio de red con Google fue simulado. Se comprobó que confirmaciones simultáneas crean un solo taller, con configuración, numeración y sesión, y que una cuenta existente conserva su vínculo original.
 - Compose local: aplicada `202611180003_google_registration` y recreada la API. Salud HTTP 200 con PostgreSQL. Los dos botones devolvieron a su pantalla de origen con el aviso `google=unavailable` cuando faltan las credenciales.
 - Pendiente: configurar las dos variables OAuth de Google y probar ingreso y registro con una cuenta real. Los pasos están en el README.
+
+### TS-21 · Correcciones del review del PR #5 — 22 de noviembre de 2026
+
+- Rama de trabajo: `TS-21`, sobre `b9ba5d8`. Restaurada `202611130001_recovery_settings_google` a su contenido de main (`5f162ab`). Retiradas de la rama las migraciones exclusivas `202611130001_registration_contact`, `202611130002_registration_address` y `202611180002_merge_registration_contact`, junto con los campos duplicados de Prisma y las escrituras de contacto en `taller`. El contacto definitivo queda únicamente en `configuracion_taller`; el registro pendiente conserva las columnas de TS-20.
+- La migración nueva `202611220001_review_ts21_integrity` agrega `created_at` a `registro_google`, reconstruye la creación de registros anteriores desde su vigencia de 30 minutos y exige hash hexadecimal, email normalizado, identificador no vacío y vencimiento posterior a la creación. También impide que un intento de Google sea registro y vinculación simultáneamente. Se conserva intacta la migración original de registro con Google, ya aplicada en desarrollo. El callback usa el mismo `now` para creación y vencimiento.
+- Se conserva el contrato opcional de contacto de la API por email por compatibilidad documentada. Ambos formularios lo requieren y Google lo exige en la API al completar un alta nueva.
+
+| Comprobación | Resultado |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | Aprobado con `CI=true`; lockfile sin cambios. |
+| Compilación y tipos | Frontend: TypeScript y Vite aprobados en `pnpm build`. Backend: generación de Prisma y TypeScript aprobados en `pnpm --filter backend test` y `test:data`. |
+| Prisma | `prisma validate` aprobado con URL ficticia, sin conexión a la base local. |
+| Frontend | 45/45 pruebas aprobadas en la ejecución de `pnpm test`. |
+| Backend | 14/14 pruebas aprobadas con `pnpm --filter backend test`, incluida la nueva prueba del instante del callback. Requirió permisos para HTTP local. La primera ejecución conjunta chocó con el bloqueo de la DLL de Prisma en Windows mientras corría la integración; se verificó el backend por separado. |
+| PostgreSQL real | `pnpm --filter backend test:data`: 67/67 pruebas aprobadas. Instalación vacía, deploy repetido, actualización desde la primera versión y desde las siete migraciones de main; SQL histórico contrastado con sus hashes de `5f162ab`, checksums aplicados preservados, contacto y solicitud pendiente conservados, ausencia de columnas duplicadas y conservación de un registro Google anterior vencido/usado. Casos inválidos de Google rechazados por SQL y flujos HTTP de email, Google y configuración aprobados. El intercambio externo con Google y el envío de correo se sustituyen en las pruebas. |
+| ESLint y diff | `pnpm lint` y `git diff --check` aprobados. |
+| Formato | `format:check` ahora ejecuta `prettier --check .`. La comprobación global detecta formato pendiente en archivos existentes; no se hizo un reformateo masivo. `pnpm exec prettier --check package.json backend/test/google-registration.test.cjs` aprobado. |
+
+La primera corrida de la nueva prueba de actualización falló por faltar la configuración del taller en su preparación; se corrigió con un upsert y se repitió toda la integración, con el resultado aprobado indicado arriba. El lanzador creó y eliminó únicamente su contenedor PostgreSQL descartable, sin volumen persistente.
+
+La base local no se migró ni se reseteó. Si ya aplicó las migraciones retiradas, queda pendiente una reconciliación específica de su historial y datos antes de usar esta versión; el README documenta esa condición. No se hizo commit, push, merge, despliegue ni CI remoto. El recorrido con una cuenta real de Google sigue pendiente.

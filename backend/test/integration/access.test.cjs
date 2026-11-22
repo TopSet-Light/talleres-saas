@@ -114,8 +114,8 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal(me.role, 'OWNER');
       assert.equal(me.user.email, 'duena.norte@example.invalid');
       assert.equal(me.workshop.name, 'Taller ficticio Norte');
-      assert.deepEqual(await prisma.workshop.findUnique({
-        where: { id: me.workshop.id },
+      assert.deepEqual(await prisma.workshopSettings.findUnique({
+        where: { workshopId: me.workshop.id },
         select: { contactPhone: true, locality: true, address: true },
       }), contact);
       assert.ok(me.permissions.includes('employees.invite'));
