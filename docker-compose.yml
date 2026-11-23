@@ -19,9 +19,15 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?Completar POSTGRES_USER}:${POSTGRES_PASSWORD:?Completar POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Completar POSTGRES_DB}?schema=public&connect_timeout=2&pool_timeout=2&socket_timeout=2&connection_limit=3
       # URL que usa el navegador: arma los enlaces de los emails y valida el Origin.
-      APP_URL: http://localhost:${FRONTEND_PORT:-5173}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
+      APP_URL: ${APP_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
       # Archivos privados (logos): volumen propio, nunca servido como estático.
       FILES_DIR: /app/backend/data/files
       # Opcionales: sin ellas la pantalla informa que falta configurar Google.

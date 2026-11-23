@@ -40,6 +40,8 @@ Actualmente existen la pantalla de salud en `frontend/src/App.tsx`, su prueba y 
 
 El punto 08 (TS-19) incorpora en el frontend `src/app/` (rutas y layout), `src/features/auth/`, `src/features/users/` y `src/shared/`; la pantalla de salud se conserva en `App.tsx` y se muestra en la ruta `/estado`. En el backend agrega `src/config/`, `src/common/`, `src/mail/`, `src/modules/auth/` y `src/modules/users/`. Por ahora el alta del taller vive en `modules/auth/` porque se crea junto con su dueño; `modules/workshops/` se creará cuando haya operaciones propias del taller. Las decisiones están en `docs/decisiones/0001-acceso.md`. TS-20 agrega `src/modules/workshop-settings/` (configuración comercial, logo y numeración por taller) y `src/modules/files/` (almacenamiento privado en disco), y suma al módulo de acceso la recuperación de contraseña y el ingreso con Google (`docs/decisiones/0002-recuperacion-configuracion-google.md`). Los endpoints de clientes, vehículos y órdenes siguen pendientes.
 
+TS-22 incorpora Resend por API HTTPS dentro de `src/mail/`, conservando SMTP/Mailpit para desarrollo. El mismo servicio envía registro, invitaciones y recuperación; la configuración está en [resend.md](resend.md).
+
 Las carpetas que aparecen a continuación y no están en el repositorio son **propuestas**. Crear únicamente las necesarias para la historia en curso, sin mover el código existente en esta entrega.
 
 ## Frontend

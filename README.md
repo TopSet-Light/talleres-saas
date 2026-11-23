@@ -52,7 +52,7 @@ backend/
     common/               # Validación, control de Origin, cookie y tokens
     database/             # Módulo Prisma
     health/               # Módulo, controlador y servicio de salud
-    mail/                 # Envío de emails por SMTP
+    mail/                 # Emails por Resend (API HTTPS) o SMTP/Mailpit
     modules/auth/         # Registro, verificación, sesiones, guardia y permisos
     modules/users/        # Empleados e invitaciones
   test/                   # Pruebas HTTP, de timeout y unitarias (node:test)
@@ -373,9 +373,11 @@ En el entorno descartable usar `docker compose -p talleres-persistencia down --v
 
 ## Configuración y secretos
 
-`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `SMTP_HOST` y `SMTP_PORT`; opcionalmente acepta `MAIL_FROM`, `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS`, `COOKIE_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, `FILES_DIR`, `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (los dos de Google van juntos o la API no arranca). Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente.
+`.env` está ignorado por Git y excluido del contexto Docker; no se copia a imágenes. Solo `api` recibe `DATABASE_URL` y solo `postgres` recibe las variables `POSTGRES_*`. La API recibe además `APP_URL` (URL pública para los enlaces y el control de `Origin`), `MAIL_TRANSPORT` (`smtp` por defecto o `resend`), `RESEND_API_KEY`, `MAIL_FROM` y las opciones `SMTP_*`; opcionalmente acepta `AUTH_RATE_LIMIT`, `TRUST_PROXY_HOPS`, `COOKIE_SECURE`, `FILES_DIR`, `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (los dos de Google van juntos o la API no arranca). Con `APP_URL` en `https` la cookie se marca `Secure` automáticamente.
 
-**Email en producción.** Mailpit es solo para desarrollo: captura los emails y no los entrega. Antes de desplegar hay que elegir un proveedor SMTP real (todavía no elegido) y configurar en el entorno del servidor `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`; `MAIL_FROM` con un remitente de un dominio verificado (SPF y DKIM), y `APP_URL` con la URL pública HTTPS para que los enlaces de registro e invitación apunten al entorno correcto. Con credenciales, la API exige TLS: puerto 465, o STARTTLS en 587. `SMTP_USER` y `SMTP_PASSWORD` van juntas o la API no arranca. Las credenciales son secretos: no van en Git ni en las imágenes. La lista completa está comentada en `.env.example`. El servicio frontend no recibe credenciales ni usa variables `VITE_*`. Cualquier futura variable con ese prefijo debe ser pública porque se incorpora al navegador. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
+**Email en producción (TS-22).** El proveedor elegido es **Resend mediante su API HTTPS**: configurar `MAIL_TRANSPORT=resend`, `RESEND_API_KEY`, `MAIL_FROM` de un dominio verificado y `APP_URL` pública HTTPS. Registro, invitaciones y recuperación usan el mismo servicio; no requieren cambios en las pantallas. La [guía de configuración de Resend](docs/resend.md) detalla dominio, DNS, clave, prueba local y pasos antes del despliegue. Mailpit sigue como opción predeterminada de desarrollo: captura los emails y no los entrega. Con `NODE_ENV=production` la API rechaza enlaces HTTP, cookies inseguras y SMTP sin proveedor y credenciales explícitos.
+
+El transporte SMTP anterior sigue disponible con `MAIL_TRANSPORT=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`. Con credenciales se exige TLS desde la conexión o STARTTLS; usuario y contraseña van juntos o la API no arranca. Con Resend por API no hacen falta variables SMTP. Los secretos no van en Git, imágenes ni variables `VITE_*`. El frontend no recibe credenciales. Evitar compartir la salida de `docker compose config`, que contiene la configuración interpolada.
 
 ## Verificaciones de esta entrega
 
