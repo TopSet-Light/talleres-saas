@@ -1,29 +1,36 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, toApiError } from '../../../shared/api/http';
 import { formatDateTime, Role, ROLE_LABELS, ROLES } from '../../../shared/lib/format';
 import { Alert } from '../../../shared/ui/Alert';
 import { Field } from '../../../shared/ui/Field';
 import { createInvitation, Employee, Invitation, listEmployees, listInvitations, revokeInvitation, updateEmployee } from '../api';
+import { useMe } from '../../auth/session';
 
 type Data = { employees: Employee[]; invitations: Invitation[] };
 type Feedback = { tone: 'success' | 'error' | 'info'; message: string } | null;
 
 export function EmployeesPage() {
+  const me = useMe();
+  const canInvite = !!me?.permissions.includes('employees.invite');
+  const canChangeRole = !!me?.permissions.includes('employees.changeRole');
+  const canDeactivate = !!me?.permissions.includes('employees.deactivate');
   const [data, setData] = useState<Data | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<ApiError | null>(null);
+  const [employeeToDeactivate, setEmployeeToDeactivate] = useState<Employee | null>(null);
+  const confirmation = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const [employees, invitations] = await Promise.all([listEmployees(), listInvitations()]);
+      const [employees, invitations] = await Promise.all([listEmployees(), canInvite ? listInvitations() : Promise.resolve([])]);
       setData({ employees, invitations });
     } catch (error) {
       setLoadError(toApiError(error).message);
     }
-  }, []);
+  }, [canInvite]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -93,7 +100,7 @@ export function EmployeesPage() {
               ) : (
                 <div className="row-actions">
                   <label className="visually-hidden" htmlFor={`rol-${employee.id}`}>Rol de {employee.name}</label>
-                  <select id={`rol-${employee.id}`} value={employee.role} disabled={busy !== null}
+                  <select id={`rol-${employee.id}`} value={employee.role} disabled={busy !== null || !canChangeRole}
                     onChange={event => {
                       const role = event.target.value as Role;
                       void run(employee.id, async () => {
@@ -103,22 +110,44 @@ export function EmployeesPage() {
                     }}>
                     {ROLES.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
                   </select>
-                  <button type="button" className={employee.status === 'ACTIVE' ? 'danger' : 'secondary'} disabled={busy !== null}
-                    onClick={() => void run(employee.id, async () => {
-                      const status = employee.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-                      await updateEmployee(employee.id, { status });
-                      return status === 'INACTIVE' ? `Desactivaste el acceso de ${employee.name}.` : `Reactivaste el acceso de ${employee.name}.`;
-                    })}>
+                  {canDeactivate && <button type="button" className={employee.status === 'ACTIVE' ? 'danger' : 'secondary'} disabled={busy !== null}
+                    onClick={() => {
+                      if (employee.status === 'ACTIVE') {
+                        setEmployeeToDeactivate(employee);
+                        confirmation.current?.showModal();
+                      } else {
+                        void run(employee.id, async () => {
+                          await updateEmployee(employee.id, { status: 'ACTIVE' });
+                          return `Reactivaste el acceso de ${employee.name}.`;
+                        });
+                      }
+                    }}>
                     {busy === employee.id ? 'Guardando…' : employee.status === 'ACTIVE' ? 'Desactivar acceso' : 'Reactivar acceso'}
-                  </button>
+                  </button>}
                 </div>
               )}
             </li>
           ))}
         </ul>
       </section>
+      <dialog ref={confirmation} aria-labelledby="deactivate-title" onClose={() => setEmployeeToDeactivate(null)}>
+        <h2 id="deactivate-title">Desactivar acceso</h2>
+        <p>{employeeToDeactivate?.name} perderá acceso al taller. Podés reactivarlo desde el equipo.</p>
+        <form method="dialog" className="auth-actions">
+          <button type="submit" className="secondary" autoFocus>Cancelar</button>
+          <button type="button" className="danger" onClick={() => {
+            if (!employeeToDeactivate) return;
+            const { id, name } = employeeToDeactivate;
+            confirmation.current?.close();
+            void run(id, async () => {
+              await updateEmployee(id, { status: 'INACTIVE' });
+              return `Desactivaste el acceso de ${name}.`;
+            });
+          }}>Confirmar baja</button>
+        </form>
+      </dialog>
 
-      <section aria-labelledby="invitar">
+      {canInvite && <section aria-labelledby="invitar">
         <h2 id="invitar">Invitar a una persona</h2>
         {inviteError && <Alert tone="error">{inviteError.message}</Alert>}
         <form onSubmit={onInvite} noValidate className="inline-form">
@@ -131,9 +160,9 @@ export function EmployeesPage() {
           </div>
           <button type="submit" disabled={busy !== null}>{busy === 'invite' ? 'Enviando…' : 'Enviar invitación'}</button>
         </form>
-      </section>
+      </section>}
 
-      <section aria-labelledby="pendientes">
+      {canInvite && <section aria-labelledby="pendientes">
         <h2 id="pendientes">Invitaciones pendientes</h2>
         {data.invitations.length === 0 ? (
           <p className="muted">No hay invitaciones pendientes.</p>
@@ -156,7 +185,7 @@ export function EmployeesPage() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
     </main>
   );
 }

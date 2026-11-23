@@ -21,8 +21,16 @@ const UNAVAILABLE = {
   message: 'No se puede aceptar esta invitación con ese email. Consultá con el taller que te invitó.',
 };
 
-function isPending(invitation: Invitation, now: Date) {
-  return !invitation.usedAt && !invitation.revokedAt && invitation.expiresAt > now;
+function assertPending(invitation: Invitation | null, now: Date): asserts invitation is Invitation {
+  if (!invitation || invitation.revokedAt) throw new BadRequestException(INVALID);
+  if (invitation.usedAt) throw new BadRequestException({
+    statusCode: 400, code: 'INVITATION_USED',
+    message: 'Si ya configuraste tu cuenta, ingresá con tu email y contraseña.',
+  });
+  if (invitation.expiresAt <= now) throw new BadRequestException({
+    statusCode: 400, code: 'INVITATION_EXPIRED',
+    message: 'Pedile a la persona administradora que te envíe una invitación nueva.',
+  });
 }
 
 function toInvitation(invitation: Invitation) {
@@ -101,7 +109,7 @@ export class InvitationsService {
     const invitation = await this.prisma.invitation.findUnique({
       where: { tokenHash: hashToken(token) }, include: { workshop: true },
     });
-    if (!invitation || !isPending(invitation, now)) throw new BadRequestException(INVALID);
+    assertPending(invitation, now);
     return {
       workshopName: invitation.workshop.name, email: invitation.email, role: invitation.role, expiresAt: invitation.expiresAt,
     };
@@ -113,7 +121,7 @@ export class InvitationsService {
    */
   async accept(dto: AcceptInvitationDto, now = new Date()) {
     const invitation = await this.prisma.invitation.findUnique({ where: { tokenHash: hashToken(dto.token) } });
-    if (!invitation || !isPending(invitation, now)) throw new BadRequestException(INVALID);
+    assertPending(invitation, now);
     rejectPasswordEqualToEmail(dto.password, invitation.email);
     const passwordHash = await this.passwords.hash(dto.password);
     try {
@@ -129,6 +137,9 @@ export class InvitationsService {
         if (used.count !== 1) throw new BadRequestException(INVALID);
       });
     } catch (error) {
+      if (isUniqueViolation(error) || error instanceof BadRequestException) {
+        assertPending(await this.prisma.invitation.findUnique({ where: { id: invitation.id } }), now);
+      }
       if (isUniqueViolation(error)) throw new ConflictException(UNAVAILABLE);
       throw error;
     }

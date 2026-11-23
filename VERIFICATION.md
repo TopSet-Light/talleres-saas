@@ -106,6 +106,13 @@ Correcciones pedidas por Ezequiel-Cagolo. Mismo entorno que la sección anterior
 | Base local de desarrollo | Sin migrar en esta revisión: el entorno local quedó apagado a pedido del usuario. Aplicar con `docker compose run --rm --no-deps api pnpm db:migrate`. |
 | Pendiente | Revisión visual en navegador y diseño según Figma (indicado por la revisión). Proveedor SMTP de producción con autenticación, `MAIL_FROM` de dominio verificado y `APP_URL` HTTPS (comentario 8). Pruebas de integración fuera del CI. Sin lint configurado. |
 
+## TS-21 · Acceso y cuenta — 13 de noviembre de 2026
+
+- Figma MCP confirmó acceso a la copia. El plan Starter limitó la lectura detallada de algunos frames. Las referencias de escritorio y móvil están enlazadas en el README.
+- En Chrome a 1440 y 390 px se verificaron las pantallas de acceso y registro. Con Compose, Mailpit y PostgreSQL del proyecto de prueba se completaron alta, verificación por email, login, invitación, aceptación, baja, reactivación y logout.
+- Pasaron el build del frontend, 26 pruebas de frontend, 26 pruebas de integración del backend con PostgreSQL descartable, ESLint y `git diff --check`.
+- La migración de teléfono, país y localidad se aplicó en un entorno aislado. Las pruebas HTTP con PostgreSQL verificaron su persistencia al completar el alta y la conservación de talleres anteriores. En Chrome a 1440 y 390 px se revisó Inicio y se recorrió el registro con los nuevos campos, verificación y login con la API real.
+- Pendientes con API: recuperación (AUTH-05), persistencia comercial (AUTH-07) e indicadores de Inicio (EP-08). Google se presenta como botón deshabilitado. La API vigente unifica invitaciones vencidas, usadas y revocadas en un estado público.
 ## TS-20 · Recuperación, configuración del taller y Google — 13 de noviembre de 2026
 
 Alcance: AUTH-05, AUTH-07/CFG, ingreso con Google para cuentas existentes, datos opcionales del registro (TS-21) y corrección del límite de emails de TS-19. Decisiones en `docs/decisiones/0002-recuperacion-configuracion-google.md`. Mismo entorno que las secciones anteriores.
@@ -149,7 +156,15 @@ Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atad
 | Corrección | El intento guarda `sesion_id` (migración `202611180001_google_link_session`). El callback exige esa sesión exacta, y el vínculo se guarda en una transacción que relee la sesión y la pertenencia con `FOR SHARE`. Los tres casos responden `/login?google=invalid` y no guardan vínculo. |
 | Comprobaciones | `pnpm --filter backend test:data`: 63/63 en tres corridas consecutivas. **Clon limpio (`3229d93`):** `CI=true pnpm install --frozen-lockfile`, `prisma validate`, `typecheck`, `pnpm build` y `git diff --check` aprobados; `pnpm test` frontend 26/26 y backend 13/13; `test:data` 63/63. **Docker:** recorrido real en un proyecto descartable 19/19, eliminado al terminar; corrió con la base en 5434 y Mailpit en 8026 porque otro proyecto local ocupaba 5433 y 8025. |
 
-## Completar las verificaciones pendientes
+## Verificaciones de TS-21
+
+### Integración de main en TS-21 — 18 de noviembre de 2026
+
+Se integró main hasta `5f162ab`, conservando la interfaz de TS-21 y las correcciones de TS-20. El contrato de la API mantiene los datos de contacto opcionales para sus clientes anteriores. El formulario de TS-21 sigue solicitándolos.
+
+Ambas ramas agregaban localidad al registro pendiente. En esa integración se hizo idempotente la adición y se agregó una migración para copiar el contacto. **Ese enfoque queda sustituido por la revisión del PR #5 del 22 de noviembre, registrada al final:** se restaura la migración de main y se retiran las migraciones duplicadas exclusivas de TS-21.
+
+Pasaron `pnpm build`, las 27 pruebas del frontend, las 13 del backend (con permisos para HTTP local), las 63 de integración con PostgreSQL descartable y ESLint sobre el código de ambos paquetes. La base local de desarrollo queda pendiente de migrar.
 
 1. Asegurar que `docker version` muestre el servidor y `docker ps` funcione. Resolver el estado de Docker Desktop antes de probar el proyecto.
 2. En un clon limpio, seguir «Arranque desde un clon limpio» del README: copiar `.env.example`, completar contraseña y ejecutar `docker compose up --build`.
@@ -158,3 +173,42 @@ Comentario de Ezequiel-Cagolo sobre la vinculación con Google: debe quedar atad
 5. Seguir «Caída y recuperación» del README: detener PostgreSQL, comprobar 503 y pantalla de error; iniciarlo y comprobar 200 sin reconstruir ni reiniciar API. Probar también la API detenida.
 6. Seguir «Persistencia real en un entorno descartable» del README con el proyecto aislado `talleres-persistencia`: insertar `406`, ejecutar `down`, levantar otra vez, consultar el dato y eliminar la tabla de prueba.
 7. Registrar resultados reales aquí. Hasta entonces, esta entrega tiene código y pruebas automatizadas aprobadas, pero la aceptación de integración Docker/PostgreSQL sigue pendiente.
+
+### Integración frontend AUTH-05 y AUTH-07 — 18 de noviembre de 2026
+
+- Figma MCP: acceso confirmado al archivo original. Se consultaron contexto y capturas de los frames 14:156 y 31:364 (recuperación), 12:802 y 31:418 (configuración). Referencias en el README. No se adjuntó a una tarjeta externa: se recibió el enlace de Figma, sin enlace o identificador de la tarjeta.
+- Frontend: 38/38 pruebas Vitest + Testing Library. Las nuevas pruebas verifican solicitud y errores de recuperación, confirmación de contraseña, token usado/vencido, contrato completo comercial, error de numeración sin pérdida de datos, permisos de lectura/escritura y multipart del logo sin descartar ediciones pendientes. El equipo también respeta permisos individuales y evita consultar invitaciones sin autorización.
+- Compilación: `pnpm build` aprobado para ambos paquetes; `pnpm --filter frontend build` y typecheck aprobados tras los cambios de permisos. ESLint sobre `frontend/src` aprobado. `git diff --check` sin errores.
+- Integración real: proyecto Compose aislado `talleres-ts21-verificacion`, API Nest, PostgreSQL y Mailpit. Se aplicaron las migraciones pendientes solo en esa base descartable; no en la base de desarrollo. `GET /api/health` devolvió 200 y el contrato correcto.
+- Chrome automatizado, 1440×1000 y 390×844, sin reemplazar respuestas de API: alta con teléfono/localidad/dirección, verificación desde Mailpit, login y Home; guardado comercial y consulta tras recarga; numeración que no retrocede; carga, lectura privada y eliminación de logo; invitación y aceptación por email; cambio de rol, baja, rechazo de cuenta desactivada, reactivación y denegación de configuración para otro rol; invitación usada; recuperación desde Mailpit, cambio de contraseña, invalidación de sesiones, rechazo del enlace usado y login con la contraseña nueva. 17 verificaciones completas correctas. Capturas locales en `tmp/ts21-browser/integracion-*.png` y resultado en `integration-result.json` (artefactos ignorados).
+- Se revisaron las capturas de recuperación y configuración en escritorio y móvil; se ajustaron tipografía de campos, distribución y ausencia de desborde horizontal. Se conservan los estados sin datos operativos de EP-08 y los cambios visuales pedidos previamente. Google continúa como botón deshabilitado por indicación del usuario.
+- Al terminar se detuvo únicamente el proyecto de verificación, conservando sus volúmenes. No se ejecutó CI remoto, ni se hizo push o merge de esta integración frontend.
+
+### TS-21 · Registro con Google y pantallas de Acceso y cuenta — 18 de noviembre de 2026
+
+- Figma: revisados los frames de la sección de escritorio `55:373` y las pantallas móviles correspondientes. El formulario de Google usa los frames `102:336` y `104:147`. El registro por email conserva la elección de contraseña después de verificar el buzón.
+- Chrome a 1440 y 390 px con respuestas de API simuladas: botones de Google en ingreso y registro, navegación y creación del taller, perfil, confirmación de cierre, recuperación, invitación válida, vencida y usada, sesión vencida, baja y acceso denegado. Se verificaron la carga del ícono de Figma a 18 × 18 px y el formulario sin desborde horizontal.
+- Frontend: 45/45 pruebas y compilación de Vite con chequeo de tipos. Backend: 13/13 pruebas en Docker y 65/65 pruebas de integración con PostgreSQL descartable. El intercambio de red con Google fue simulado. Se comprobó que confirmaciones simultáneas crean un solo taller, con configuración, numeración y sesión, y que una cuenta existente conserva su vínculo original.
+- Compose local: aplicada `202611180003_google_registration` y recreada la API. Salud HTTP 200 con PostgreSQL. Los dos botones devolvieron a su pantalla de origen con el aviso `google=unavailable` cuando faltan las credenciales.
+- Pendiente: configurar las dos variables OAuth de Google y probar ingreso y registro con una cuenta real. Los pasos están en el README.
+
+### TS-21 · Correcciones del review del PR #5 — 22 de noviembre de 2026
+
+- Rama de trabajo: `TS-21`, sobre `b9ba5d8`. Restaurada `202611130001_recovery_settings_google` a su contenido de main (`5f162ab`). Retiradas de la rama las migraciones exclusivas `202611130001_registration_contact`, `202611130002_registration_address` y `202611180002_merge_registration_contact`, junto con los campos duplicados de Prisma y las escrituras de contacto en `taller`. El contacto definitivo queda únicamente en `configuracion_taller`; el registro pendiente conserva las columnas de TS-20.
+- La migración nueva `202611220001_review_ts21_integrity` agrega `created_at` a `registro_google`, reconstruye la creación de registros anteriores desde su vigencia de 30 minutos y exige hash hexadecimal, email normalizado, identificador no vacío y vencimiento posterior a la creación. También impide que un intento de Google sea registro y vinculación simultáneamente. Se conserva intacta la migración original de registro con Google, ya aplicada en desarrollo. El callback usa el mismo `now` para creación y vencimiento.
+- Se conserva el contrato opcional de contacto de la API por email por compatibilidad documentada. Ambos formularios lo requieren y Google lo exige en la API al completar un alta nueva.
+
+| Comprobación | Resultado |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | Aprobado con `CI=true`; lockfile sin cambios. |
+| Compilación y tipos | Frontend: TypeScript y Vite aprobados en `pnpm build`. Backend: generación de Prisma y TypeScript aprobados en `pnpm --filter backend test` y `test:data`. |
+| Prisma | `prisma validate` aprobado con URL ficticia, sin conexión a la base local. |
+| Frontend | 45/45 pruebas aprobadas en la ejecución de `pnpm test`. |
+| Backend | 14/14 pruebas aprobadas con `pnpm --filter backend test`, incluida la nueva prueba del instante del callback. Requirió permisos para HTTP local. La primera ejecución conjunta chocó con el bloqueo de la DLL de Prisma en Windows mientras corría la integración; se verificó el backend por separado. |
+| PostgreSQL real | `pnpm --filter backend test:data`: 67/67 pruebas aprobadas. Instalación vacía, deploy repetido, actualización desde la primera versión y desde las siete migraciones de main; SQL histórico contrastado con sus hashes de `5f162ab`, checksums aplicados preservados, contacto y solicitud pendiente conservados, ausencia de columnas duplicadas y conservación de un registro Google anterior vencido/usado. Casos inválidos de Google rechazados por SQL y flujos HTTP de email, Google y configuración aprobados. El intercambio externo con Google y el envío de correo se sustituyen en las pruebas. |
+| ESLint y diff | `pnpm lint` y `git diff --check` aprobados. |
+| Formato | `format:check` ahora ejecuta `prettier --check .`. La comprobación global detecta formato pendiente en archivos existentes; no se hizo un reformateo masivo. `pnpm exec prettier --check package.json backend/test/google-registration.test.cjs` aprobado. |
+
+La primera corrida de la nueva prueba de actualización falló por faltar la configuración del taller en su preparación; se corrigió con un upsert y se repitió toda la integración, con el resultado aprobado indicado arriba. El lanzador creó y eliminó únicamente su contenedor PostgreSQL descartable, sin volumen persistente.
+
+La base local no se migró ni se reseteó. Si ya aplicó las migraciones retiradas, queda pendiente una reconciliación específica de su historial y datos antes de usar esta versión; el README documenta esa condición. No se hizo commit, push, merge, despliegue ni CI remoto. El recorrido con una cuenta real de Google sigue pendiente.

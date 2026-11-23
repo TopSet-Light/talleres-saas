@@ -1,20 +1,33 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { isEmail } from 'class-validator';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { hashToken, newToken, TOKEN_PATTERN } from '../../common/tokens';
+import { lockRecipient } from '../../common/email-quota';
+import { hashToken, newToken, normalizeEmail, TOKEN_PATTERN } from '../../common/tokens';
 import { PrismaService } from '../../database/prisma.service';
-import { isUniqueViolation } from './auth.service';
-import { GoogleOidcService } from './google-oidc.service';
+import { createWorkshopOwner, isUniqueViolation, requireWorkshopContact } from './auth.service';
+import { WorkshopRegistrationDto } from './dto';
+import { GoogleOidcService, GoogleProfile } from './google-oidc.service';
+import { permissionsFor } from './permissions';
 import { SessionService, StaleAccessError } from './session.service';
 
 export const GOOGLE_ATTEMPT_TTL_MS = 10 * 60 * 1000;
+export const GOOGLE_REGISTRATION_TTL_MS = 30 * 60 * 1000;
+
+const INVALID_REGISTRATION = {
+  statusCode: 400, code: 'INVALID_GOOGLE_REGISTRATION',
+  message: 'El registro con Google venció o ya se completó. Volvé a iniciar el registro.',
+};
 
 /** Motivos que el frontend muestra en ?google=<motivo>; no revelan datos de cuentas ajenas. */
 export type GoogleFailure =
-  'invalid' | 'cancelled' | 'unverified' | 'not-linked' | 'disabled' | 'conflict' | 'error';
+  'invalid' | 'cancelled' | 'unverified' | 'not-linked' | 'disabled' | 'conflict' | 'error'
+  | 'already-registered' | 'email-needs-verification';
+
+type GoogleDestination = 'login' | 'home' | 'register';
 
 /** `home`: el error ocurre en una vinculación con sesión iniciada, se informa en la app y no en el login. */
 export class GoogleLoginError extends Error {
-  constructor(readonly reason: GoogleFailure, readonly destination: 'login' | 'home' = 'login') { super(reason); }
+  constructor(readonly reason: GoogleFailure, readonly destination: GoogleDestination = 'login') { super(reason); }
 }
 
 function sameValue(a: string, b: string) {
@@ -23,13 +36,6 @@ function sameValue(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-/**
- * Ingreso con Google (revisión de TS-20). Una cuenta de Google solo se vincula desde una sesión
- * iniciada con contraseña: el email de Google no alcanza, porque en dominios externos a Gmail o
- * Workspace `email_verified` puede seguir en true aunque el buzón haya cambiado de dueño. El
- * ingreso con Google reconoce únicamente cuentas ya vinculadas (por `sub`) y nunca crea
- * usuarios ni talleres.
- */
 @Injectable()
 export class GoogleAuthService {
   private readonly logger = new Logger(GoogleAuthService.name);
@@ -53,7 +59,7 @@ export class GoogleAuthService {
    * Con `link` es una vinculación: guarda la sesión exacta que la inicia, y solo esa sesión,
    * todavía vigente, la puede completar.
    */
-  async start(now = new Date(), link?: { userId: string; sessionId: string }) {
+  async start(now = new Date(), intent?: 'register' | { userId: string; sessionId: string }) {
     if (!this.google.isEnabled()) {
       throw new NotFoundException({ statusCode: 404, code: 'GOOGLE_DISABLED', message: 'El ingreso con Google no está habilitado.' });
     }
@@ -61,13 +67,15 @@ export class GoogleAuthService {
     const nonce = newToken();
     const codeVerifier = randomBytes(32).toString('base64url');
     const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+    const registration = intent === 'register';
+    const link = typeof intent === 'object' ? intent : undefined;
     await this.prisma.googleLoginAttempt.create({
       data: {
-        stateHash: hashToken(state), nonce, codeVerifier, userId: link?.userId ?? null, sessionId: link?.sessionId ?? null,
+        stateHash: hashToken(state), nonce, codeVerifier, registration, userId: link?.userId, sessionId: link?.sessionId,
         createdAt: now, expiresAt: new Date(now.getTime() + GOOGLE_ATTEMPT_TTL_MS),
       },
     });
-    return { state, url: this.google.authorizationUrl({ state, nonce, codeChallenge }) };
+    return { state, url: this.google.authorizationUrl({ state, nonce, codeChallenge, registration }) };
   }
 
   /**
@@ -94,7 +102,7 @@ export class GoogleAuthService {
       const access = await this.sessions.resolve(sessionToken, now);
       if (!access || !attempt.sessionId || access.sessionId !== attempt.sessionId) throw new GoogleLoginError('invalid');
     }
-    const destination = attempt.userId ? 'home' : 'login';
+    const destination = attempt.userId ? 'home' : attempt.registration ? 'register' : 'login';
     if (query.error !== undefined) throw new GoogleLoginError('cancelled', destination);
     if (typeof query.code !== 'string' || query.code.length === 0 || query.code.length > 2048) throw new GoogleLoginError('invalid', destination);
 
@@ -113,13 +121,76 @@ export class GoogleAuthService {
       return { mode: 'link' as const };
     }
     const identity = await this.prisma.googleIdentity.findUnique({ where: { subject: profile.subject } });
-    if (!identity) throw new GoogleLoginError('not-linked');
+    if (!identity) {
+      if (attempt.registration) return this.beginRegistration(profile, now);
+      throw new GoogleLoginError('not-linked');
+    }
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: identity.userId }, include: { membership: true } });
-    if (!user.membership || user.membership.status !== 'ACTIVE') throw new GoogleLoginError('disabled');
+    if (!user.membership || user.membership.status !== 'ACTIVE') throw new GoogleLoginError('disabled', destination);
     try {
       return { mode: 'login' as const, session: await this.sessions.create(user.id, now, {}) };
     } catch (error) {
-      if (error instanceof StaleAccessError) throw new GoogleLoginError('disabled');
+      if (error instanceof StaleAccessError) throw new GoogleLoginError('disabled', destination);
+      throw error;
+    }
+  }
+
+  private async beginRegistration(profile: GoogleProfile, now: Date) {
+    const email = normalizeEmail(profile.email);
+    // Google acredita el control actual del buzón para Gmail y cuentas administradas de Workspace.
+    if (typeof email !== 'string' || email.length > 254 || !isEmail(email)
+      || (!email.endsWith('@gmail.com') && !profile.hostedDomain)) {
+      throw new GoogleLoginError('email-needs-verification', 'register');
+    }
+    if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+      throw new GoogleLoginError('already-registered', 'register');
+    }
+    const token = newToken();
+    const ownerName = (profile.name?.trim() || email.split('@')[0]).slice(0, 160);
+    await this.prisma.googleRegistration.create({
+      data: {
+        tokenHash: hashToken(token), subject: profile.subject, email, ownerName,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + GOOGLE_REGISTRATION_TTL_MS),
+      },
+    });
+    return { mode: 'register' as const, token };
+  }
+
+  async previewRegistration(token: unknown, now = new Date()) {
+    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) throw new BadRequestException(INVALID_REGISTRATION);
+    const pending = await this.prisma.googleRegistration.findUnique({ where: { tokenHash: hashToken(token) } });
+    if (!pending || pending.usedAt || pending.expiresAt <= now) throw new BadRequestException(INVALID_REGISTRATION);
+    return pending;
+  }
+
+  async completeRegistration(token: unknown, dto: WorkshopRegistrationDto, now = new Date()) {
+    const pending = await this.previewRegistration(token, now);
+    requireWorkshopContact(dto);
+    try {
+      return await this.prisma.$transaction(async tx => {
+        await lockRecipient(tx, 'registro', pending.email);
+        const consumed = await tx.googleRegistration.updateMany({
+          where: { id: pending.id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },
+        });
+        if (consumed.count !== 1) throw new BadRequestException(INVALID_REGISTRATION);
+        const { workshop, user } = await createWorkshopOwner(tx, { ...dto, ownerName: pending.ownerName, email: pending.email });
+        await tx.googleIdentity.create({ data: { subject: pending.subject, userId: user.id } });
+        await tx.pendingRegistration.updateMany({ where: { email: pending.email, usedAt: null }, data: { usedAt: now } });
+        const session = await this.sessions.issue(tx, user.id, now);
+        const me = {
+          user: { id: user.id, name: user.name, email: user.email },
+          workshop: { id: workshop.id, name: workshop.name },
+          role: 'OWNER', permissions: permissionsFor('OWNER'), googleLinked: true, passwordConfigured: false,
+        };
+        return { session, me };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          statusCode: 409, code: 'ALREADY_REGISTERED', message: 'Esta cuenta ya está registrada. Iniciá sesión.',
+        });
+      }
       throw error;
     }
   }
@@ -160,9 +231,20 @@ export class GoogleAuthService {
   }
 
   async unlink(userId: string) {
+    if (!(await this.accountOptions(userId)).passwordConfigured) {
+      throw new ConflictException({ statusCode: 409, code: 'PASSWORD_REQUIRED', message: 'Creá una contraseña antes de desvincular Google.' });
+    }
     const removed = await this.prisma.googleIdentity.deleteMany({ where: { userId } });
     if (removed.count === 0) {
       throw new NotFoundException({ statusCode: 404, code: 'NOT_FOUND', message: 'Tu cuenta no tiene Google vinculado.' });
     }
+  }
+
+  async accountOptions(userId: string) {
+    const [googleLinked, credential] = await Promise.all([
+      this.isLinked(userId),
+      this.prisma.credential.findUnique({ where: { userId }, select: { emailVerifiedAt: true } }),
+    ]);
+    return { googleLinked, passwordConfigured: Boolean(credential?.emailVerifiedAt) };
   }
 }

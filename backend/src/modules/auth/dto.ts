@@ -13,36 +13,40 @@ export class EmailField {
   email!: string;
 }
 
-// Sin contraseña: se elige al abrir el enlace del email (revisión de TS-19).
-export class RegisterDto extends EmailField {
+export class WorkshopRegistrationDto {
   @Transform(({ value }: { value: unknown }) => trimText(value))
   @IsString({ message: 'Ingresá el nombre del taller.' })
   @Length(2, 160, { message: 'El nombre del taller debe tener entre 2 y 160 caracteres.' })
   workshopName!: string;
 
   @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
+  @MaxLength(40, { message: 'El teléfono debe tener hasta 40 caracteres.' })
+  @Matches(/^\+?(?=(?:\D*\d){6})[\d ().-]+$/, { message: 'Ingresá un teléfono con al menos 6 dígitos.' })
+  contactPhone?: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
+  @Length(2, 120, { message: 'Ingresá una ciudad o localidad de entre 2 y 120 caracteres.' })
+  locality?: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @IsOptional()
+  @Length(2, 300, { message: 'Ingresá una dirección de entre 2 y 300 caracteres.' })
+  address?: string;
+}
+
+// Sin contraseña: se elige al abrir el enlace del email (revisión de TS-19).
+export class RegisterDto extends WorkshopRegistrationDto {
+  @Transform(({ value }: { value: unknown }) => normalizeEmail(value))
+  @MaxLength(254, { message: EMAIL })
+  @IsEmail({}, { message: EMAIL })
+  email!: string;
+
+  @Transform(({ value }: { value: unknown }) => trimText(value))
   @IsString({ message: 'Ingresá tu nombre.' })
   @Length(2, 160, { message: 'Tu nombre debe tener entre 2 y 160 caracteres.' })
   ownerName!: string;
-
-  // Opcionales (formulario de TS-21): al completar el registro pasan a la configuración del taller.
-  @Transform(({ value }: { value: unknown }) => { const text = trimText(value); return text === '' ? undefined : text; })
-  @IsOptional()
-  @IsString({ message: 'Ingresá un teléfono de contacto.' })
-  @MaxLength(40, { message: 'El teléfono admite hasta 40 caracteres.' })
-  contactPhone?: string;
-
-  @Transform(({ value }: { value: unknown }) => { const text = trimText(value); return text === '' ? undefined : text; })
-  @IsOptional()
-  @IsString({ message: 'Ingresá la localidad.' })
-  @MaxLength(120, { message: 'La localidad admite hasta 120 caracteres.' })
-  locality?: string;
-
-  @Transform(({ value }: { value: unknown }) => { const text = trimText(value); return text === '' ? undefined : text; })
-  @IsOptional()
-  @IsString({ message: 'Ingresá el domicilio.' })
-  @MaxLength(300, { message: 'El domicilio admite hasta 300 caracteres.' })
-  address?: string;
 }
 
 export class LoginDto extends EmailField {

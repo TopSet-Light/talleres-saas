@@ -72,10 +72,11 @@ function tokenFrom(message) {
 }
 
 const PASSWORD = 'contraseña de prueba segura';
+const contact = { contactPhone: '+54 11 5555-0123', locality: 'Buenos Aires', address: 'Calle de prueba 123' };
 
 async function register(api, browser, { workshopName, ownerName, email }) {
   const before = api.outbox.length;
-  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email })).status, 202);
+  assert.equal((await browser.post('/auth/register', { workshopName, ownerName, email, ...contact })).status, 202);
   assert.equal(api.outbox.length, before + 1, 'envía el enlace al buzón');
   return tokenFrom(api.outbox.at(-1));
 }
@@ -113,11 +114,15 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal(me.role, 'OWNER');
       assert.equal(me.user.email, 'duena.norte@example.invalid');
       assert.equal(me.workshop.name, 'Taller ficticio Norte');
+      assert.deepEqual(await prisma.workshopSettings.findUnique({
+        where: { workshopId: me.workshop.id },
+        select: { contactPhone: true, locality: true, address: true },
+      }), contact);
       assert.ok(me.permissions.includes('employees.invite'));
 
       const mails = api.outbox.length;
       const repeated = await new Browser(api).post('/auth/register', {
-        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid',
+        workshopName: 'Taller duplicado', ownerName: 'Otra persona', email: 'duena.norte@example.invalid', ...contact,
       });
       assert.equal(repeated.status, 202, 'misma respuesta que un registro nuevo');
       assert.equal(api.outbox.length, mails, 'un email ya registrado no recibe enlaces');
@@ -181,7 +186,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
       await register(api, browser, { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
       const mails = api.outbox.length;
-      const fourth = await browser.post('/auth/register', { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid' });
+      const fourth = await browser.post('/auth/register', { workshopName: 'Taller límite', ownerName: 'Persona límite', email: 'limite@example.invalid', ...contact });
       assert.equal(fourth.status, 202, 'misma respuesta');
       assert.equal(api.outbox.length, mails, 'no envía más de 3 por hora al mismo destinatario');
       assert.equal((await browser.post('/auth/registration/preview', { token: first })).status, 200, 'el primer enlace sigue vigente');
@@ -247,6 +252,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
       assert.equal(me.role, 'RECEPTION');
       assert.equal(me.workshop.name, 'Taller ficticio Norte');
       assert.equal((await new Browser(api).post('/invitations/accept', { token, name: 'Otra vez', password: PASSWORD })).status, 400, 'usada');
+      assert.equal((await new Browser(api).post('/invitations/preview', { token })).body.code, 'INVITATION_USED');
 
       // El taller no puede venir del pedido: un campo extra se rechaza.
       await ownerA.post('/invitations', { email: 'mecanico.norte@example.invalid', role: 'MECHANIC' });
@@ -280,6 +286,7 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
         data: { createdAt: new Date(now - 4 * 86400000), expiresAt: new Date(now - 86400000) },
       });
       assert.equal((await new Browser(api).post('/invitations/accept', { token: expiredToken, name: 'Vencida', password: PASSWORD })).status, 400);
+      assert.equal((await new Browser(api).post('/invitations/preview', { token: expiredToken })).body.code, 'INVITATION_EXPIRED');
 
       // Ya forma parte del taller / pertenece a otro taller sin revelarlo a quien invita.
       assert.equal((await ownerA.post('/invitations', { email: 'recepcion.norte@example.invalid', role: 'MECHANIC' })).body.code, 'ALREADY_MEMBER');
@@ -377,7 +384,8 @@ test('punto 08: acceso, permisos y aislamiento con dos talleres en PostgreSQL re
     await t.test('las respuestas no exponen contraseñas, hashes ni tokens', async () => {
       const bodies = [(await ownerA.get('/auth/me')).text, (await ownerA.get('/employees')).text, (await ownerA.get('/invitations')).text];
       for (const body of bodies) {
-        assert.ok(!/argon2|password|tokenHash|token_hash/i.test(body));
+        assert.ok(!/argon2|"(?:password|passwordHash|password_hash|token|tokenHash|token_hash)"\s*:/i.test(body));
+        assert.ok(!body.includes(PASSWORD));
       }
       const stored = await prisma.credential.findMany();
       assert.ok(stored.every(c => c.passwordHash.startsWith('$argon2id$') && !c.passwordHash.includes(PASSWORD)));

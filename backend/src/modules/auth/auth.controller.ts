@@ -6,13 +6,14 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../common/session-cooki
 import { Access, CurrentAccess } from './access';
 import { AccessGuard } from './access.guard';
 import { AuthService, toMe } from './auth.service';
-import { CompleteRegistrationDto, EmailField, LoginDto, RegisterDto, ResetPasswordDto, TokenDto } from './dto';
+import { CompleteRegistrationDto, EmailField, LoginDto, RegisterDto, ResetPasswordDto, TokenDto, WorkshopRegistrationDto } from './dto';
 import { PasswordResetService } from './password-reset.service';
-import { GoogleAuthService, GoogleLoginError, GOOGLE_ATTEMPT_TTL_MS } from './google-auth.service';
+import { GoogleAuthService, GoogleLoginError, GOOGLE_ATTEMPT_TTL_MS, GOOGLE_REGISTRATION_TTL_MS } from './google-auth.service';
 
 import { SessionService } from './session.service';
 
 const GOOGLE_STATE_COOKIE = 'taller_google_state';
+const GOOGLE_REGISTRATION_COOKIE = 'taller_google_registro';
 
 @Controller('auth')
 export class AuthController {
@@ -75,6 +76,7 @@ export class AuthController {
 
   /** Opciones públicas para la pantalla de ingreso. */
   @Get('options')
+  @Header('Cache-Control', 'no-store')
   options() {
     return { google: this.googleAuth.isEnabled() };
   }
@@ -84,7 +86,44 @@ export class AuthController {
   @Get('google/start')
   @UseGuards(ThrottlerGuard)
   async googleStart(@Res() res: Response) {
-    this.redirectToGoogle(res, await this.googleAuth.start());
+    await this.startGoogleAccess(res, '/login');
+  }
+
+  @Get('google/register/start')
+  @UseGuards(ThrottlerGuard)
+  async googleRegisterStart(@Res() res: Response) {
+    await this.startGoogleAccess(res, '/registro');
+  }
+
+  private async startGoogleAccess(res: Response, path: '/login' | '/registro') {
+    res.set('Cache-Control', 'no-store');
+    if (!this.googleAuth.isEnabled()) {
+      res.redirect(302, `${this.config.appUrl}${path}?google=unavailable`);
+      return;
+    }
+    this.redirectToGoogle(res, await this.googleAuth.start(new Date(), path === '/registro' ? 'register' : undefined));
+  }
+
+  private googleRegistrationCookieOptions() {
+    return { httpOnly: true, sameSite: 'lax' as const, secure: this.config.cookieSecure, path: '/api/auth/google/registration' };
+  }
+
+  @Get('google/registration')
+  @HttpCode(204)
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(ThrottlerGuard)
+  async googleRegistrationPreview(@Req() req: Request) {
+    await this.googleAuth.previewRegistration(req.cookies?.[GOOGLE_REGISTRATION_COOKIE]);
+  }
+
+  @Post('google/registration')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(ThrottlerGuard)
+  async googleRegistrationComplete(@Body() dto: WorkshopRegistrationDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { session, me } = await this.googleAuth.completeRegistration(req.cookies?.[GOOGLE_REGISTRATION_COOKIE], dto);
+    res.clearCookie(GOOGLE_REGISTRATION_COOKIE, this.googleRegistrationCookieOptions());
+    res.cookie(SESSION_COOKIE, session.token, sessionCookieOptions(this.config, session.expiresAt));
+    return me;
   }
 
   // Vincular Google exige una sesión iniciada con contraseña (revisión de TS-20).
@@ -102,6 +141,7 @@ export class AuthController {
   }
 
   private redirectToGoogle(res: Response, { state, url }: { state: string; url: string }) {
+    res.set('Cache-Control', 'no-store');
     res.cookie(GOOGLE_STATE_COOKIE, state, {
       httpOnly: true, sameSite: 'lax', secure: this.config.cookieSecure, path: '/api/auth/google', maxAge: GOOGLE_ATTEMPT_TTL_MS,
     });
@@ -119,12 +159,18 @@ export class AuthController {
         res.redirect(302, `${this.config.appUrl}/?google=linked`);
         return;
       }
+      if (result.mode === 'register') {
+        res.cookie(GOOGLE_REGISTRATION_COOKIE, result.token, { ...this.googleRegistrationCookieOptions(), maxAge: GOOGLE_REGISTRATION_TTL_MS });
+        res.redirect(302, `${this.config.appUrl}/registro/google`);
+        return;
+      }
       res.cookie(SESSION_COOKIE, result.session.token, sessionCookieOptions(this.config, result.session.expiresAt));
       res.redirect(302, `${this.config.appUrl}/`);
     } catch (error) {
       if (!(error instanceof GoogleLoginError)) this.logger.warn('Falló un ingreso con Google.');
       const reason = error instanceof GoogleLoginError ? error.reason : 'error';
-      const path = error instanceof GoogleLoginError && error.destination === 'home' ? '/' : '/login';
+      const destination = error instanceof GoogleLoginError ? error.destination : 'login';
+      const path = { home: '/', login: '/login', register: '/registro' }[destination];
       res.redirect(302, `${this.config.appUrl}${path}?google=${reason}`);
     }
   }
@@ -136,7 +182,7 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { token, expiresAt, me } = await this.auth.login(dto);
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.config, expiresAt));
-    return me;
+    return { ...me, ...await this.googleAuth.accountOptions(me.user.id) };
   }
 
   @Post('logout')
@@ -150,6 +196,6 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   @UseGuards(AccessGuard)
   async me(@CurrentAccess() access: Access) {
-    return { ...toMe(access), googleLinked: await this.googleAuth.isLinked(access.userId) };
+    return { ...toMe(access), ...await this.googleAuth.accountOptions(access.userId) };
   }
 }

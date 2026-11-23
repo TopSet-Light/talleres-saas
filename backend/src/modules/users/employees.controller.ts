@@ -4,6 +4,7 @@ import { AccessGuard } from '../auth/access.guard';
 import { UpdateEmployeeDto } from './dto';
 import { EmployeesService } from './employees.service';
 
+// eslint-disable-next-line no-useless-assignment -- La regla no detecta el uso en el decorador de parámetro de NestJS.
 const uuid = new ParseUUIDPipe({ errorHttpStatusCode: 404 });
 
 @Controller('employees')

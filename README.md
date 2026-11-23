@@ -133,6 +133,21 @@ Responde HTTP 200 después de ejecutar `SELECT 1` con Prisma. Si la consulta fal
 
 ## Desarrollo, logs y pruebas
 
+Con Node y pnpm en el anfitrión, ejecutá desde la raíz:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm format:check
+```
+
+ESLint revisa JavaScript y TypeScript en ambos paquetes, incluidas las reglas
+de Hooks en React. `pnpm format:check` comprueba todo el repositorio. Para verificar
+archivos concretos, usá `pnpm exec prettier --check eslint.config.mjs package.json`.
+Pasá a `pnpm format` los archivos que quieras formatear. Por ejemplo,
+`pnpm format frontend/src/main.tsx`. El código existente se puede formatear
+por archivo conforme se edite.
+
 ```sh
 docker compose ps
 docker compose logs -f frontend api postgres mailpit
@@ -161,7 +176,9 @@ El esquema inicial contiene taller, usuario, pertenencia con rol y estado, clien
 
 Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se aplica en la API desde el punto 08; no hay RLS implementado.
 
-Las migraciones versionadas son siete: `202611050001_initial_data` y `202611050002_data_integrity` crean la estructura, las restricciones y el historial, conservando los datos de la primera versión; `202611090001_access` agrega las tablas de acceso sin modificar columnas existentes, y `202611100001_pending_registration` reemplaza la verificación de email por solicitudes de registro pendientes (elimina `verificacion_email`, que solo existió en la rama TS-19), y `202611130001_recovery_settings_google` agrega recuperación de contraseña, configuración comercial, numeración, identidad de Google y datos opcionales del registro, creando la configuración inicial de los talleres existentes; `202611140001_review_ts20` aplica la revisión del PR #6: el intento de Google guarda el usuario que vincula, y los prefijos de numeración dejan de admitir dígitos; `202611180001_google_link_session` ata cada vinculación con Google a la sesión exacta que la inició. Son transaccionales; si los datos previos violan una restricción, fallan sin corregirlos ni borrarlos automáticamente. No editar migraciones aplicadas. Los índices parciales, checks y triggers viven en SQL: usar migraciones, no `prisma db push`, y conservar esas reglas al generar cambios futuros. Sucursales múltiples y usuarios en varios talleres requerirán migraciones y cambios funcionales posteriores.
+Las migraciones versionadas están en `backend/prisma/migrations/`. Las primeras crean la estructura, las restricciones y el historial. Las de acceso agregan credenciales, sesiones, invitaciones y solicitudes de registro. TS-20 incorpora recuperación de contraseña, configuración comercial, numeración e identidad de Google, y ata cada vinculación a la sesión que la inició. `202611180003_google_registration` agrega los registros pendientes que permiten completar el alta desde Google en TS-21. `202611220001_review_ts21_integrity` agrega su fecha de creación y restricciones SQL; para registros anteriores reconstruye la fecha desde su vigencia de 30 minutos. Las migraciones conservan los datos existentes y son transaccionales. No modificar migraciones ya aplicadas. Para los índices parciales, checks y triggers, usar migraciones SQL y conservar las reglas al generar cambios futuros.
+
+La revisión de TS-21 elimina de la rama las migraciones `202611130001_registration_contact`, `202611130002_registration_address` y `202611180002_merge_registration_contact`, que duplicaban datos de TS-20 y no llegaron a `main`. El contacto definitivo vive solo en `configuracion_taller`; `registro_pendiente` lo conserva temporalmente hasta el alta. Una base local que ya aplicó las migraciones retiradas necesita una reconciliación específica antes de continuar: no aplicar estos cambios sobre ella ni resetearla automáticamente. Si contiene datos que deben conservarse, respaldarlos y preparar una reconciliación; recrearla solo si es descartable y se autorizó expresamente.
 
 Desde la raíz, con la configuración local preparada:
 
@@ -193,7 +210,19 @@ El lanzador usa un PostgreSQL propio con puerto aleatorio en loopback, contrase�
 
 ## Acceso y usuarios
 
-Implementa AUTH-01, AUTH-02, AUTH-03, AUTH-04 y AUTH-06 (TS-19). Las decisiones, la matriz de permisos y sus motivos están en [docs/decisiones/0001-acceso.md](docs/decisiones/0001-acceso.md). Quedan fuera la recuperación de contraseña (AUTH-05) y los datos comerciales (AUTH-07).
+La referencia de TS-21 es [Acceso y cuenta · escritorio](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=55-373) y [Cuenta, acceso y administración · móvil](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=31-303). El alta con Google está diseñada para [escritorio](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=102-336) y [móvil](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=104-147).
+
+El registro requiere nombre comercial, responsable, email, teléfono de contacto, ciudad o localidad y dirección del taller. Los datos de contacto se guardan al verificar el correo y elegir la contraseña. El reenvío vuelve a solicitar el registro con los mismos datos, sujeto al límite de la API. Los talleres y enlaces creados antes de esta migración conservan sus datos existentes.
+
+Las pantallas de recuperación (AUTH-05) y configuración comercial (AUTH-07) usan la API real. Recuperación permite solicitar el correo, validar el enlace, elegir una nueva contraseña y volver al login; informa enlaces inválidos, vencidos o usados. Configuración carga y guarda datos comerciales, contacto, condiciones, pie de documentos, vigencia y numeración; muestra los errores por campo sin perder lo ingresado. El logo privado admite vista previa, carga multipart y eliminación, con guardado separado para conservar la edición comercial pendiente.
+
+La navegación a configuración depende de `settings.read` y la edición de `settings.manage`, como en la API. Equipo y accesos sigue dentro de configuración y respeta los permisos de invitación, cambio de rol y baja. Los enlaces de invitación muestran pantallas propias para los estados usado y vencido. El menú de cuenta da acceso a Mi perfil y a la confirmación de cierre de sesión. Si la sesión activa vence mientras se usa el sistema, se ofrece volver a iniciar sesión.
+
+Figma MCP confirmó acceso al archivo original para esta integración: [recuperación escritorio](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=14-156), [recuperación móvil](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=31-364), [configuración escritorio](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=12-802) y [configuración móvil](https://www.figma.com/design/WpCWUicur4LkBKyeOs3WQo/SaaS-Taller?node-id=31-418). Se conservan las correcciones visuales posteriores solicitadas en TS-21; los campos adicionales del contrato comercial se adaptan a una columna en móvil y dos en escritorio.
+
+El [primer frame de Inicio y recepción](https://www.figma.com/design/mh465sVvHf7MLQjrVkLrq8/SaaS-Taller--Copy-?node-id=10-21) sirve de referencia para el Inicio autenticado. Los indicadores y las prioridades esperan los datos de EP-08.
+
+Implementa AUTH-01 a AUTH-07 (TS-19, TS-20 y TS-21). Las decisiones y la matriz de permisos están en [docs/decisiones/0001-acceso.md](docs/decisiones/0001-acceso.md) y [docs/decisiones/0002-recuperacion-configuracion-google.md](docs/decisiones/0002-recuperacion-configuracion-google.md).
 
 Recorrido local:
 
@@ -211,7 +240,8 @@ Recorrido local:
 | `POST /api/invitations/preview`, `/accept` | Públicas, con el token de la invitación y límite por IP |
 | `POST /api/auth/password/forgot`, `/password/reset/preview`, `/password/reset` | Públicas, con límite por IP (TS-20, AUTH-05) |
 | `GET /api/auth/options` | Pública: `{ "google": true \| false }` |
-| `GET /api/auth/google/start`, `/google/callback` | Navegación completa del navegador (no fetch), con límite por IP |
+| `GET /api/auth/google/start`, `/google/register/start`, `/google/callback` | Navegación completa del navegador, con límite por IP |
+| `GET` y `POST /api/auth/google/registration` | Validar el registro pendiente y completar el alta, con cookie temporal y límite por IP |
 | `GET /api/auth/google/link/start`, `DELETE /api/auth/google/link` | Sesión iniciada: vincular (navegación completa) y desvincular Google |
 
 Reglas principales:
@@ -226,12 +256,12 @@ Reglas principales:
 - Limitación del MVP: la pertenencia única incluye las inactivas, así que un empleado dado de baja no puede sumarse a otro taller con el mismo email.
 - El registro acepta además `contactPhone`, `locality` y `address` opcionales (formulario de TS-21), que pasan a la configuración del taller al completarlo.
 - **Recuperación de contraseña (AUTH-05):** `/password/forgot` responde igual para emails registrados y desconocidos y envía un enlace a `/restablecer-contrasena#token=…` que vence en una hora, es de un solo uso y se guarda como hash. Hay un máximo de 3 emails por hora por destinatario, reservado de forma atómica. Elegir la contraseña nueva revoca todas las sesiones, anula los demás enlaces y libera el bloqueo por intentos fallidos.
-- **Ingreso con Google:** solo para cuentas **vinculadas**. La vinculación se hace desde una sesión iniciada con contraseña, con un botón «Vincular con Google» que navega a `/api/auth/google/link/start`. Nunca se vincula por email: en dominios que no son de Gmail ni Workspace, `email_verified` puede seguir en true aunque el buzón haya cambiado de dueño (revisión del PR #6). Una cuenta de Google se vincula a un solo usuario y un usuario a una sola cuenta; para cambiarla hay que desvincular primero. `GET /api/auth/me` informa `googleLinked`.
-- El ingreso con Google exige una cuenta vinculada y activa, y email verificado por Google; no crea usuarios ni talleres. El inicio usa PKCE S256, `state` atado al navegador por la cookie `taller_google_state` y `nonce`; una vinculación solo la completa la misma sesión que la inició (no basta otra sesión del mismo usuario), y el vínculo se guarda en una transacción que vuelve a comprobar que esa sesión siga vigente: si se cerró la sesión o se restableció la contraseña mientras la API hablaba con Google, no se vincula.
-- Resultados: el ingreso correcto redirige a `/` con la sesión iniciada, y la vinculación correcta a `/?google=linked`. Los rechazos de ingreso redirigen a `/login?google=<motivo>`, con motivo `invalid`, `cancelled`, `unverified`, `not-linked`, `disabled` o `error`. Los de vinculación redirigen a `/?google=<motivo>`, con `conflict`, `cancelled`, `unverified`, `invalid` o `error`. Sin `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` queda deshabilitado.
+- **Ingreso con Google.** «Continuar con Google» en `/login` inicia una sesión de una cuenta vinculada y activa por el identificador `sub` de Google. Las cuentas creadas por email pueden vincularse desde **Mi perfil** después de iniciar sesión. Para desvincular Google, la cuenta debe tener una contraseña configurada. `GET /api/auth/me` informa `googleLinked` y `passwordConfigured`.
+- **Registro con Google.** «Continuar con Google» en `/registro` lleva a **Completá los datos de tu taller** para una cuenta nueva de Gmail o Google Workspace. El formulario pide nombre comercial, teléfono, localidad y dirección. Al confirmar, una transacción crea el taller, su dueño, configuración, numeración, vínculo y sesión. Una identidad ya vinculada entra directamente a Inicio. Un email ya registrado requiere acceder primero a la cuenta existente. Para cuentas de Google con un buzón externo, usar primero el registro por email para comprobar el control del buzón y luego vincular Google.
+- Google usa PKCE S256, `nonce` y `state` de un solo uso ligado al navegador por `taller_google_state`. El registro pendiente tiene su propia cookie `HttpOnly` de 30 minutos y su token solo se guarda como hash. La vinculación exige la misma sesión vigente que la inició. Los resultados de Google se muestran en la pantalla de origen o en Inicio para la vinculación. Cuando faltan credenciales OAuth, «Continuar con Google» muestra un aviso al usarlo.
 - Un login o un ingreso con Google que está en curso mientras se restablece la contraseña o se da de baja la cuenta no deja una sesión válida: la sesión se crea en una transacción que vuelve a comprobar la contraseña y la pertenencia con bloqueos compartidos.
 
-Para probar Google en local: en Google Cloud Console, crear un cliente OAuth de tipo «Aplicación web» con la URI de redirección `http://localhost:5173/api/auth/google/callback`, cargar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env` y reconstruir con `docker compose up --build -d`. En producción, la URI es `{APP_URL}/api/auth/google/callback`. Las pruebas automáticas usan un Google simulado.
+Para activar Google en local, crear un cliente OAuth de tipo «Aplicación web» en Google Cloud Console y registrar la URI `http://localhost:5173/api/auth/google/callback`. Cargar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env` y seguir los pasos de [Migraciones y datos de prueba](#migraciones-y-datos-de-prueba) para compilar, aplicar la migración y recrear `api`. La URI debe coincidir con `{APP_URL}/api/auth/google/callback` en cada entorno. Las pruebas de integración sustituyen el intercambio de Google y verifican el resto del flujo con PostgreSQL real.
 
 ## Configuración del taller
 

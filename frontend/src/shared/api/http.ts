@@ -59,8 +59,8 @@ export async function request<T>(path: string, options: { method?: string; body?
   try {
     response = await fetch(`/api${path}`, {
       method: options.method ?? 'GET',
-      headers: options.body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers: options.body === undefined || options.body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
+      body: options.body instanceof FormData ? options.body : options.body === undefined ? undefined : JSON.stringify(options.body),
       credentials: 'same-origin',
       signal: controller.signal,
     });

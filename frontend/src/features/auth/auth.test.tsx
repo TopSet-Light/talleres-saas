@@ -12,22 +12,35 @@ const registration = {
   workshopName: 'Taller ficticio Norte', ownerName: 'Dueña Norte', email: 'duena@example.invalid', expiresAt: '2026-11-11T12:00:00.000Z',
 };
 
+it('abre Más como pantalla y reserva el acceso a Configuración para el dueño', async () => {
+  mockApi({ 'GET /api/auth/me': () => json(200, { ...owner, role: 'RECEPTION', permissions: ['customers.read'] }) });
+  const router = renderAt('/');
+  fireEvent.click(await screen.findByRole('link', { name: 'Más' }));
+  expect(await screen.findByRole('heading', { name: 'Más' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/mas');
+  expect(screen.getByRole('link', { name: 'Más' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByText('Configuración').closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.queryByRole('link', { name: /Configuración/ })).not.toBeInTheDocument();
+});
+
 it('sin sesión redirige al login', async () => {
   mockApi({ 'GET /api/auth/me': anonymous });
   const router = renderAt('/');
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/login');
 });
 
 it('inicia sesión y muestra el taller y el menú del dueño', async () => {
   const fetchMock = mockApi({ 'GET /api/auth/me': anonymous, 'POST /api/auth/login': () => json(200, owner) });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'contraseña de prueba');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
-  expect(await screen.findByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Empleados' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
+expect(screen.queryByRole('link', { name: 'Empleados' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'Configuración' }));
+  expect(await screen.findByRole('link', { name: 'Equipo y accesos' })).toHaveAttribute('href', '/empleados');
   expect(calls(fetchMock, 'POST /api/auth/login')).toEqual([{ email: 'duena@example.invalid', password: 'contraseña de prueba' }]);
 });
 
@@ -37,10 +50,10 @@ it('muestra el error genérico del login', async () => {
     'POST /api/auth/login': () => json(401, { code: 'INVALID_CREDENTIALS', message: 'Email o contraseña incorrectos.' }),
   });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'x');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
   expect(await screen.findByText('Email o contraseña incorrectos.')).toBeInTheDocument();
 });
 
@@ -55,19 +68,26 @@ it('registro: pide solo los datos del taller, muestra errores de la API y luego 
   renderAt('/registro');
   await screen.findByRole('heading', { name: 'Registrá tu taller' });
   expect(screen.queryByLabelText(/Contraseña/)).not.toBeInTheDocument();
-  fill('Nombre del taller', 'Taller ficticio');
-  fill('Tu nombre', 'Persona');
+  fill('Nombre comercial', 'Taller ficticio');
+  fill('Nombre del responsable', 'Persona');
+  fill('Teléfono de contacto', '+54 11 5555-0123');
+  fill('Localidad o ciudad del taller', 'Buenos Aires');
+  fill('Dirección', 'Calle de prueba 123');
   fill('Email', 'persona');
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Crear taller' }));
   expect(await screen.findByText('Ingresá un email válido.')).toBeInTheDocument();
   expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true');
 
   fill('Email', 'persona@example.invalid');
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar taller' }));
-  expect(await screen.findByRole('heading', { name: 'Revisá tu email' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Crear taller' }));
+  expect(await screen.findByRole('heading', { name: 'Revisá tu correo' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/register')[1]).toEqual({
     workshopName: 'Taller ficticio', ownerName: 'Persona', email: 'persona@example.invalid',
+    contactPhone: '+54 11 5555-0123', locality: 'Buenos Aires', address: 'Calle de prueba 123',
   });
+  fireEvent.click(screen.getByRole('button', { name: 'Reenviar email' }));
+  expect(calls(fetchMock, 'POST /api/auth/register')[2]).toEqual(calls(fetchMock, 'POST /api/auth/register')[1]);
+  expect(await screen.findByRole('button', { name: 'Reenviar email' })).toBeEnabled();
 });
 
 it('el enlace del email muestra el registro y permite elegir la contraseña', async () => {
@@ -149,11 +169,23 @@ it('una invitación vencida o usada muestra el motivo', async () => {
   expect(screen.queryByRole('button', { name: 'Aceptar invitación' })).not.toBeInTheDocument();
 });
 
+it.each([
+  ['INVITATION_EXPIRED', 'Invitación vencida'], ['INVITATION_USED', 'Invitación ya utilizada'],
+])('muestra la pantalla de invitación que corresponde a %s', async (code, title) => {
+  mockApi({ 'GET /api/auth/me': anonymous, 'POST /api/invitations/preview': () => json(400, { code, message: 'Aviso de la invitación.' }) });
+  renderAt(`/invitacion#token=${TOKEN}`);
+  expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Aceptar invitación' })).not.toBeInTheDocument();
+});
+
 it('cierra sesión y vuelve al login', async () => {
   const fetchMock = mockApi({ 'GET /api/auth/me': () => json(200, owner), 'POST /api/auth/logout': () => json(204) });
   renderAt('/');
-  fireEvent.click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('link', { name: 'Cerrar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(1);
 });
 
@@ -164,13 +196,65 @@ it('si el cierre de sesión falla, lo informa, mantiene la sesión y permite rei
     'POST /api/auth/logout': () => { if (fail) throw new TypeError('Failed to fetch'); return json(204); },
   });
   renderAt('/');
+  fireEvent.click(await screen.findByRole('link', { name: 'Cerrar sesión' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
   expect(await screen.findByText(/No se cerró la sesión/)).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Cerrar sesión' })).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
-  expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Ingresá a tu taller' })).toBeInTheDocument();
   expect(calls(fetchMock, 'POST /api/auth/logout')).toHaveLength(2);
+});
+
+it.each([['/login', '/api/auth/google/start'], ['/registro', '/api/auth/google/register/start']])(
+  'permite navegar a Google desde %s', async (url, href) => {
+    mockApi({ 'GET /api/auth/me': anonymous });
+    renderAt(url);
+    expect(await screen.findByRole('link', { name: 'Continuar con Google' })).toHaveAttribute('href', href);
+  },
+);
+
+it('informa que faltan credenciales sin quitar la opción de Google', async () => {
+  mockApi({ 'GET /api/auth/me': anonymous });
+  renderAt('/login?google=unavailable');
+  expect(await screen.findByRole('alert')).toHaveTextContent('todavía no está configurado');
+  expect(screen.getByRole('link', { name: 'Continuar con Google' })).toBeInTheDocument();
+});
+
+it('en Google completa los datos del taller, conserva el formulario si falla y entra al crearlo', async () => {
+  let attempt = 0;
+  const fetchMock = mockApi({
+    'GET /api/auth/me': anonymous,
+    'GET /api/auth/google/registration': () => json(204),
+    'POST /api/auth/google/registration': () => (++attempt === 1
+      ? json(400, { code: 'VALIDATION_ERROR', message: 'Revisá los datos.', fields: { locality: 'Ingresá una localidad.' } })
+      : json(201, { ...owner, googleLinked: true })),
+  });
+  const router = renderAt('/registro/google');
+  await screen.findByRole('heading', { name: 'Completá los datos de tu taller' });
+  await screen.findByLabelText('Nombre comercial');
+  fill('Nombre comercial', 'Taller ficticio');
+  fill('Teléfono de contacto', '+54 11 5555-0123');
+  fill('Dirección', 'Dirección ficticia 123');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear taller' }));
+  expect(await screen.findByText('Ingresá una localidad.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Nombre comercial')).toHaveValue('Taller ficticio');
+  fill('Localidad o ciudad del taller', 'Córdoba');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear taller' }));
+  expect(await screen.findByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/');
+  expect(calls(fetchMock, 'POST /api/auth/google/registration')[1]).toEqual({
+    workshopName: 'Taller ficticio', contactPhone: '+54 11 5555-0123', address: 'Dirección ficticia 123', locality: 'Córdoba',
+  });
+});
+
+it('si la sesión de registro con Google ya no es válida, permite volver al registro', async () => {
+  mockApi({ 'GET /api/auth/me': anonymous, 'GET /api/auth/google/registration': () => json(400, {
+    code: 'INVALID_GOOGLE_REGISTRATION', message: 'Volvé a iniciar el registro.',
+  }) });
+  renderAt('/registro/google');
+  expect(await screen.findByRole('link', { name: 'Volver al registro' })).toHaveAttribute('href', '/registro');
+  expect(screen.queryByRole('button', { name: 'Crear taller' })).not.toBeInTheDocument();
 });
 
 it('un 401 tardío del /auth/me inicial no pisa un login exitoso', async () => {
@@ -180,14 +264,14 @@ it('un 401 tardío del /auth/me inicial no pisa un login exitoso', async () => {
     'POST /api/auth/login': () => json(200, owner),
   });
   renderAt('/login');
-  await screen.findByRole('heading', { name: 'Iniciar sesión' });
+  await screen.findByRole('heading', { name: 'Ingresá a tu taller' });
   fill('Email', 'duena@example.invalid');
   fill('Contraseña', 'contraseña de prueba');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
-  expect(await screen.findByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+  expect(await screen.findByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
   // Recién ahora responden las consultas iniciales (StrictMode hace dos).
   for (const resolve of pendingMe) resolve(anonymous());
   await new Promise(resolve => setTimeout(resolve, 20));
-  expect(screen.getByRole('heading', { name: 'Hola, Dueña Norte' })).toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: 'Iniciar sesión' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Inicio' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Ingresá a tu taller' })).not.toBeInTheDocument();
 });

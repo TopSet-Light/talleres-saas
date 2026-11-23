@@ -2,7 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { APP_CONFIG, AppConfig } from '../../config/app-config';
 
-export interface GoogleProfile { subject: string; email: string; emailVerified: boolean; nonce?: string }
+export interface GoogleProfile {
+  subject: string;
+  email: string;
+  emailVerified: boolean;
+  nonce?: string;
+  name?: string;
+  hostedDomain?: string;
+}
 
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -27,12 +34,12 @@ export class GoogleOidcService {
   }
 
   /** Pide solo identidad y email. PKCE (S256), state y nonce son obligatorios. */
-  authorizationUrl(params: { state: string; nonce: string; codeChallenge: string }) {
+  authorizationUrl(params: { state: string; nonce: string; codeChallenge: string; registration: boolean }) {
     const query = new URLSearchParams({
       client_id: this.config.googleClientId!,
       redirect_uri: this.redirectUri(),
       response_type: 'code',
-      scope: 'openid email',
+      scope: params.registration ? 'openid email profile' : 'openid email',
       state: params.state,
       nonce: params.nonce,
       code_challenge: params.codeChallenge,
@@ -67,6 +74,9 @@ export class GoogleOidcService {
     const ticket = await this.verifier.verifyIdToken({ idToken, audience: this.config.googleClientId });
     const payload = ticket.getPayload();
     if (!payload?.sub || !payload.email) throw new Error('ID token sin identidad');
-    return { subject: payload.sub, email: payload.email, emailVerified: payload.email_verified === true, nonce: payload.nonce };
+    return {
+      subject: payload.sub, email: payload.email, emailVerified: payload.email_verified === true,
+      nonce: payload.nonce, name: payload.name, hostedDomain: payload.hd,
+    };
   }
 }

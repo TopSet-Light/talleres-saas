@@ -50,6 +50,8 @@ async function googleFlow(google, browser, profile, { route, nonce } = {}) {
 }
 const link = (google, browser, profile) => googleFlow(google, browser, profile, { route: '/auth/google/link/start' });
 const login = (google, browser, profile, options) => googleFlow(google, browser, profile, options);
+const register = (google, browser, profile) => googleFlow(google, browser, profile, { route: '/auth/google/register/start' });
+const workshopDetails = { workshopName: 'Taller de Google', contactPhone: '+54 11 5555-0123', locality: 'Córdoba', address: 'Av. de prueba 123' };
 
 test('TS-20 · ingreso con Google para cuentas vinculadas en PostgreSQL real', async t => {
   const prisma = new PrismaClient({ datasourceUrl: databaseUrl, log: [] });
@@ -227,6 +229,63 @@ test('TS-20 · ingreso con Google para cuentas vinculadas en PostgreSQL real', a
       assert.equal((await browser.get('/auth/me')).status, 401);
     });
 
+    await t.test('el registro recién crea el taller al completar los datos e inicia sesión como dueño', async () => {
+      const profile = { subject: 'sub-registro-gmail', email: 'taller-prueba-ts21@gmail.com', name: 'Dueña de prueba' };
+      const browser = new Browser(api);
+      assert.equal(await register(google, browser, profile), 'http://app.test/registro/google');
+      assert.equal(await prisma.user.count({ where: { email: profile.email } }), 0);
+      assert.equal((await browser.get('/auth/me')).status, 401);
+      assert.equal((await browser.get('/auth/google/registration')).status, 204);
+      assert.equal((await new Browser(api).post('/auth/google/registration', workshopDetails)).body.code, 'INVALID_GOOGLE_REGISTRATION');
+      assert.equal((await browser.post('/auth/google/registration', workshopDetails, { origin: 'https://externo.example' })).status, 403);
+      const invalid = await browser.post('/auth/google/registration', { workshopName: workshopDetails.workshopName });
+      assert.deepEqual(Object.keys(invalid.body.fields).sort(), ['address', 'contactPhone', 'locality']);
+      assert.equal((await browser.post('/auth/google/registration', { ...workshopDetails, email: 'otro@example.test' })).status, 400);
+
+      const otherTab = new Browser(api);
+      otherTab.cookie = browser.cookie;
+      const results = await Promise.all([browser, otherTab].map(client => client.post('/auth/google/registration', workshopDetails)));
+      assert.deepEqual(results.map(result => result.status).sort(), [201, 400]);
+      const created = results.find(result => result.status === 201).body;
+      const signedIn = results[0].status === 201 ? browser : otherTab;
+      assert.equal(created.role, 'OWNER');
+      assert.equal(created.user.email, profile.email);
+      assert.equal(created.user.name, profile.name);
+      assert.equal(created.googleLinked, true);
+      assert.equal(created.passwordConfigured, false);
+      assert.equal((await signedIn.get('/auth/me')).body.workshop.id, created.workshop.id);
+      assert.equal((await signedIn.get('/auth/google/registration')).status, 400);
+      assert.equal((await signedIn.delete('/auth/google/link')).body.code, 'PASSWORD_REQUIRED');
+      assert.equal(await prisma.workshop.count({ where: { name: workshopDetails.workshopName } }), 1);
+      const settings = await prisma.workshopSettings.findUniqueOrThrow({ where: { workshopId: created.workshop.id } });
+      assert.deepEqual([settings.contactPhone, settings.locality, settings.address], [workshopDetails.contactPhone, workshopDetails.locality, workshopDetails.address]);
+      assert.equal(await prisma.documentNumbering.count({ where: { workshopId: created.workshop.id } }), 2);
+
+      const returning = new Browser(api);
+      assert.equal(await login(google, returning, profile), 'http://app.test/');
+      assert.equal((await returning.get('/auth/me')).body.user.id, created.user.id);
+      assert.equal(await register(google, returning, profile), 'http://app.test/');
+      assert.equal(await prisma.workshop.count({ where: { name: workshopDetails.workshopName } }), 1);
+    });
+
+    await t.test('el registro respeta el email ocupado, los buzones externos, la cancelación y el vencimiento', async () => {
+      const profile = { subject: 'sub-registro-conflicto', email: 'nuevo-ocupado@example.invalid', hostedDomain: 'example.invalid' };
+      const browser = new Browser(api);
+      assert.equal(await register(google, new Browser(api), { ...profile, hostedDomain: undefined }), 'http://app.test/registro?google=email-needs-verification');
+      assert.equal(await register(google, new Browser(api), { ...profile, email: 'duena.google@example.invalid' }), 'http://app.test/registro?google=already-registered');
+      const url = await start(browser, '/auth/google/register/start');
+      assert.equal(url.searchParams.get('scope'), 'openid email profile');
+      assert.equal(await finish(browser, { state: url.searchParams.get('state'), error: 'access_denied' }), 'http://app.test/registro?google=cancelled');
+      assert.equal(await register(google, browser, profile), 'http://app.test/registro/google');
+      await registerOwner(api, { workshopName: 'Taller por email', ownerName: 'Dueña', email: profile.email });
+      assert.equal((await browser.post('/auth/google/registration', workshopDetails)).body.code, 'ALREADY_REGISTERED');
+      assert.equal(await prisma.googleIdentity.count({ where: { subject: profile.subject } }), 0);
+      await prisma.googleRegistration.updateMany({
+        where: { subject: profile.subject }, data: { createdAt: new Date(0), expiresAt: new Date(1) },
+      });
+      assert.equal((await browser.get('/auth/google/registration')).body.code, 'INVALID_GOOGLE_REGISTRATION');
+    });
+
     await t.test('sin credenciales de Google el ingreso y la vinculación quedan deshabilitados', async () => {
       const saved = { id: process.env.GOOGLE_CLIENT_ID, secret: process.env.GOOGLE_CLIENT_SECRET };
       delete process.env.GOOGLE_CLIENT_ID;
@@ -234,7 +293,11 @@ test('TS-20 · ingreso con Google para cuentas vinculadas en PostgreSQL real', a
       const disabled = await startApi();
       try {
         assert.deepEqual((await new Browser(disabled).get('/auth/options')).body, { google: false });
-        assert.equal((await new Browser(disabled).raw('GET', '/auth/google/start')).status, 404);
+        for (const [path, destination] of [['/auth/google/start', '/login'], ['/auth/google/register/start', '/registro']]) {
+          const response = await new Browser(disabled).raw('GET', path);
+          assert.equal(response.status, 302);
+          assert.equal(response.headers.get('location'), `http://app.test${destination}?google=unavailable`);
+        }
         const { browser } = await registerOwner(disabled, { workshopName: 'Taller sin Google', ownerName: 'Persona', email: 'singoogle@example.invalid' });
         assert.equal((await browser.raw('GET', '/auth/google/link/start')).status, 404);
       } finally {
