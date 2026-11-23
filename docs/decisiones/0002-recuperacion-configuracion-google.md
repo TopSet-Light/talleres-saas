@@ -79,6 +79,8 @@
 ## 8. Datos del registro de TS-21
 
 - El formulario de TS-21 envía teléfono, localidad y domicilio. Se aceptan como opcionales, se guardan en la solicitud pendiente y pasan a la configuración del taller al completar el registro.
+- El contacto definitivo se guarda únicamente en `configuracion_taller`; no se duplica en `taller`. En `registro_pendiente` se usan las columnas de TS-20 (`telefono`, `localidad`, `domicilio`). Los formularios de email y Google piden contacto; la API por email conserva la opcionalidad por compatibilidad y la de Google lo exige al completar un alta nueva.
+- La revisión del PR #5 conserva intactas las migraciones de `main` y agrega `202611220001_review_ts21_integrity`: fecha de creación, formato de hash, email normalizado, identificador no vacío, vencimiento posterior a la creación y exclusión entre registro y vinculación. El callback usa un mismo instante para creación y vencimiento del registro pendiente.
 
 ## Pendiente
 

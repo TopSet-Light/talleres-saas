@@ -138,12 +138,13 @@ Con Node y pnpm en el anfitrión, ejecutá desde la raíz:
 ```bash
 pnpm install --frozen-lockfile
 pnpm lint
-pnpm format:check eslint.config.mjs package.json
+pnpm format:check
 ```
 
 ESLint revisa JavaScript y TypeScript en ambos paquetes, incluidas las reglas
-de Hooks en React. Pasá a `pnpm format:check` los archivos que quieras verificar
-y a `pnpm format` los que quieras formatear. Por ejemplo,
+de Hooks en React. `pnpm format:check` comprueba todo el repositorio. Para verificar
+archivos concretos, usá `pnpm exec prettier --check eslint.config.mjs package.json`.
+Pasá a `pnpm format` los archivos que quieras formatear. Por ejemplo,
 `pnpm format frontend/src/main.tsx`. El código existente se puede formatear
 por archivo conforme se edite.
 
@@ -175,7 +176,9 @@ El esquema inicial contiene taller, usuario, pertenencia con rol y estado, clien
 
 Las relaciones compuestas por taller impiden asociar un vehículo con un cliente ajeno. La patente se normaliza quitando espacios y guiones y pasando a mayúsculas; es única entre vehículos activos del mismo taller. Se permiten vehículos sin patente y clientes con solo teléfono. Cambiar el cliente de un vehículo conserva automáticamente el propietario anterior en una operación atómica; el historial no se edita ni borra directamente. Los registros relacionados se archivan en lugar de eliminarlos. El aislamiento de lecturas se aplica en la API desde el punto 08; no hay RLS implementado.
 
-Las migraciones versionadas están en `backend/prisma/migrations/`. Las primeras crean la estructura, las restricciones y el historial. Las de acceso agregan credenciales, sesiones, invitaciones y solicitudes de registro. TS-20 incorpora recuperación de contraseña, configuración comercial, numeración e identidad de Google, y ata cada vinculación a la sesión que la inició. `202611180003_google_registration` agrega los registros pendientes que permiten completar el alta desde Google en TS-21. Las migraciones conservan los datos existentes y son transaccionales. Para los índices parciales, checks y triggers, usar migraciones SQL y conservar las reglas al generar cambios futuros.
+Las migraciones versionadas están en `backend/prisma/migrations/`. Las primeras crean la estructura, las restricciones y el historial. Las de acceso agregan credenciales, sesiones, invitaciones y solicitudes de registro. TS-20 incorpora recuperación de contraseña, configuración comercial, numeración e identidad de Google, y ata cada vinculación a la sesión que la inició. `202611180003_google_registration` agrega los registros pendientes que permiten completar el alta desde Google en TS-21. `202611220001_review_ts21_integrity` agrega su fecha de creación y restricciones SQL; para registros anteriores reconstruye la fecha desde su vigencia de 30 minutos. Las migraciones conservan los datos existentes y son transaccionales. No modificar migraciones ya aplicadas. Para los índices parciales, checks y triggers, usar migraciones SQL y conservar las reglas al generar cambios futuros.
+
+La revisión de TS-21 elimina de la rama las migraciones `202611130001_registration_contact`, `202611130002_registration_address` y `202611180002_merge_registration_contact`, que duplicaban datos de TS-20 y no llegaron a `main`. El contacto definitivo vive solo en `configuracion_taller`; `registro_pendiente` lo conserva temporalmente hasta el alta. Una base local que ya aplicó las migraciones retiradas necesita una reconciliación específica antes de continuar: no aplicar estos cambios sobre ella ni resetearla automáticamente. Si contiene datos que deben conservarse, respaldarlos y preparar una reconciliación; recrearla solo si es descartable y se autorizó expresamente.
 
 Desde la raíz, con la configuración local preparada:
 

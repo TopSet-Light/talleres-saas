@@ -280,7 +280,9 @@ test('TS-20 · ingreso con Google para cuentas vinculadas en PostgreSQL real', a
       await registerOwner(api, { workshopName: 'Taller por email', ownerName: 'Dueña', email: profile.email });
       assert.equal((await browser.post('/auth/google/registration', workshopDetails)).body.code, 'ALREADY_REGISTERED');
       assert.equal(await prisma.googleIdentity.count({ where: { subject: profile.subject } }), 0);
-      await prisma.googleRegistration.updateMany({ where: { subject: profile.subject }, data: { expiresAt: new Date(0) } });
+      await prisma.googleRegistration.updateMany({
+        where: { subject: profile.subject }, data: { createdAt: new Date(0), expiresAt: new Date(1) },
+      });
       assert.equal((await browser.get('/auth/google/registration')).body.code, 'INVALID_GOOGLE_REGISTRATION');
     });
 

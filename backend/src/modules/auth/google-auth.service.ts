@@ -122,7 +122,7 @@ export class GoogleAuthService {
     }
     const identity = await this.prisma.googleIdentity.findUnique({ where: { subject: profile.subject } });
     if (!identity) {
-      if (attempt.registration) return this.beginRegistration(profile, new Date());
+      if (attempt.registration) return this.beginRegistration(profile, now);
       throw new GoogleLoginError('not-linked');
     }
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: identity.userId }, include: { membership: true } });
@@ -150,6 +150,7 @@ export class GoogleAuthService {
     await this.prisma.googleRegistration.create({
       data: {
         tokenHash: hashToken(token), subject: profile.subject, email, ownerName,
+        createdAt: now,
         expiresAt: new Date(now.getTime() + GOOGLE_REGISTRATION_TTL_MS),
       },
     });
